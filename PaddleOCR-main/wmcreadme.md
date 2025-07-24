@@ -1,0 +1,1 @@
+请自行前往https://github.com/PaddlePaddle/PaddleOCR拉取其库
