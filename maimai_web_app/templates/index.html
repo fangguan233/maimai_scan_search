@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maimai 歌曲识别</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 500px;
+        }
+        h1 {
+            color: #1877f2;
+            margin-bottom: 20px;
+        }
+        #upload-form {
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .upload-label {
+            background-color: #42b72a;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .upload-label:hover {
+            background-color: #36a420;
+        }
+        #file-name {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
+        #loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            display: none;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #result {
+            margin-top: 20px;
+            text-align: left;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        .error {
+            color: #d93025;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Maimai 歌曲名称识别</h1>
+        <form id="upload-form">
+            <label for="file-upload" class="upload-label">选择或拍摄图片</label>
+            <input id="file-upload" type="file" name="file" accept="image/*" capture="environment">
+            <div id="file-name">未选择文件</div>
+        </form>
+        <div id="loader"></div>
+        <div id="result" style="display:none;"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-upload');
+        const fileNameDisplay = document.getElementById('file-name');
+        const loader = document.getElementById('loader');
+        const resultDiv = document.getElementById('result');
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                fileNameDisplay.textContent = file.name;
+                // 自动提交
+                handleSubmit();
+            } else {
+                fileNameDisplay.textContent = '未选择文件';
+            }
+        });
+
+        async function handleSubmit() {
+            const maxRetries = 3; // 总共尝试3次 (1次初次 + 2次重试)
+            let attempt = 0;
+
+            loader.style.display = 'block';
+            resultDiv.style.display = 'none';
+            resultDiv.innerHTML = '';
+
+            while (attempt < maxRetries) {
+                attempt++;
+                console.log(`Attempt ${attempt}...`);
+                try {
+                    const formData = new FormData();
+                    formData.append('file', fileInput.files[0]);
+
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok && !result.error) {
+                        // 成功，显示结果并退出循环
+                        displayResult(result);
+                        loader.style.display = 'none';
+                        resultDiv.style.display = 'block';
+                        return; 
+                    }
+                    
+                    // 如果是最后一次尝试，则显示错误并退出
+                    if (attempt >= maxRetries) {
+                        displayError(result.error || '服务器错误', result.details || result.ocr_text || `Status: ${response.status}`);
+                        break;
+                    }
+                    
+                    console.log(`Attempt ${attempt} failed, retrying...`);
+                    // 短暂等待后重试
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                } catch (error) {
+                    // 如果是最后一次尝试，则显示错误并退出
+                    if (attempt >= maxRetries) {
+                        displayError('上传失败', '无法连接到服务器。请检查服务器是否正在运行。');
+                        break;
+                    }
+                    console.log(`Attempt ${attempt} failed with network error, retrying...`);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+            
+            // 所有尝试都失败后，隐藏加载动画并显示结果区域
+            loader.style.display = 'none';
+            resultDiv.style.display = 'block';
+        }
+
+        function displayResult(data) {
+            // 将 basic_info 的内容合并到顶层，方便处理
+            const flatData = { ...data.basic_info, id: data.id, type: data.type };
+
+            let tableHtml = `
+                <h3>识别结果</h3>
+                <table style="width:100%; border-collapse: collapse;">
+            `;
+
+            // 渲染基本信息
+            tableHtml += `
+                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">歌曲名称</td><td style="padding: 8px;">${flatData.title}</td></tr>
+                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">艺术家</td><td style="padding: 8px;">${flatData.artist}</td></tr>
+                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">BPM</td><td style="padding: 8px;">${flatData.bpm}</td></tr>
+                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">版本</td><td style="padding: 8px;">${flatData.from}</td></tr>
+                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">类型</td><td style="padding: 8px;">${flatData.type}</td></tr>
+                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">ID</td><td style="padding: 8px;">${flatData.id}</td></tr>
+            `;
+
+            // 渲染谱面信息
+            if (data.charts && Array.isArray(data.charts)) {
+                const difficulties = ['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'];
+                let chartsContent = '<ul style="margin: 0; padding-left: 20px;">';
+                
+                data.charts.forEach((chart, i) => {
+                    const difficulty = difficulties[i] || 'Unknown';
+                    const level = data.level[i] || 'N/A';
+                    const ds = data.ds[i] || 'N/A';
+                    const charter = chart.charter || '-';
+                    chartsContent += `<li><strong>${difficulty}:</strong> ${level} (定数: ${ds}, 谱师: ${charter})</li>`;
+                });
+
+                chartsContent += '</ul>';
+                tableHtml += `
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px; font-weight: bold; background-color: #f9f9f9; vertical-align: top;">谱面信息</td>
+                        <td style="padding: 8px;">${chartsContent}</td>
+                    </tr>
+                `;
+            }
+
+            tableHtml += '</table>';
+            resultDiv.innerHTML = tableHtml;
+        }
+
+        function displayError(errorMsg, details) {
+            let detailsHtml = '';
+            if (details) {
+                detailsHtml = `<p><small>详情: ${details}</small></p>`;
+            }
+            resultDiv.innerHTML = `
+                <p class="error">${errorMsg}</p>
+                ${detailsHtml}
+            `;
+        }
+    </script>
+</body>
+</html>
