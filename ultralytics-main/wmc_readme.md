@@ -1,1 +1,1 @@
-请自行前往https://github.com/ultralytics/ultralytics下载库并解压到这里
+请自行前往https://github.com/ultralytics/ultralytics 下载库并解压到这里
