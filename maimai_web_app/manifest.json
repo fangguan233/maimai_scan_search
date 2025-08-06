@@ -1,0 +1,8 @@
+{
+  "short_name": "Maimai Scan",
+  "name": "Maimai 歌曲识别",
+  "start_url": "/",
+  "background_color": "#f0f2f5",
+  "display": "standalone",
+  "theme_color": "#1877f2"
+}

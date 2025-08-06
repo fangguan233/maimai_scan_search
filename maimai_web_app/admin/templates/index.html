@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maimai Scan - 管理后台</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --background-color: #f4f6f9;
+            --container-bg: #ffffff;
+            --text-color: #333;
+            --text-light: #888;
+            --accent-green: #27ae60;
+            --accent-red: #c0392b;
+            --accent-blue: #2980b9;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        /* **UI优化**: 响应式布局，在小屏幕上单列显示 */
+        @media (max-width: 768px) {
+            .grid-container {
+                grid-template-columns: 1fr;
+            }
+        }
+        .card {
+            background-color: var(--container-bg);
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        h1, h2 {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .log-container, .feedback-container {
+            grid-column: 1 / -1; /* Span across both columns */
+        }
+        #log-content {
+            background-color: #2d3436;
+            color: #dfe6e9;
+            padding: 15px;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: scroll;
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+        }
+        /* **反馈功能**: 表格样式 */
+        .feedback-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .feedback-table th, .feedback-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        .feedback-table th {
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 14px;
+        }
+        .feedback-table td {
+            font-size: 13px;
+        }
+        .feedback-table .content-cell {
+            white-space: pre-wrap; /* 保持换行 */
+            word-break: break-word; /* 防止长单词溢出 */
+            max-width: 400px; /* 限制最大宽度 */
+        }
+        .status-line {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap; /* 在空间极度不足时允许换行，但会优先保持一行 */
+            gap: 8px; /* 使用 gap 来创建元素间的间距 */
+        }
+        .status-indicator {
+            font-size: 20px;
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 5px;
+            color: white;
+        }
+        .status-running { background-color: var(--accent-green); }
+        .status-stopped { background-color: var(--accent-red); }
+        .status-crashed { background-color: #f39c12; } /* **守护进程改造**: 崩溃状态的颜色 */
+        button {
+            background-color: var(--accent-blue);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+            margin: 5px;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button.start-btn { background-color: var(--accent-green); }
+        button.stop-btn { background-color: var(--accent-red); }
+        button.delete-btn {
+            background-color: #e74c3c;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        .file-list {
+            list-style: none;
+            padding: 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .file-list li {
+            background-color: #ecf0f1;
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #333;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        .toast.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Maimai Scan - 管理后台</h1>
+        
+        <div class="grid-container">
+            <div class="card">
+                <h2>应用控制</h2>
+                <div class="status-line">
+                    <span>主应用状态:</span>
+                    <span id="app-status" class="status-indicator status-stopped">正在查询...</span>
+                    <span id="app-pid"></span>
+                </div>
+                <div style="margin-top: 10px; display: flex; align-items: center; gap: 15px;">
+                    <button id="start-btn" class="start-btn">启动应用</button>
+                    <button id="stop-btn" class="stop-btn">停止应用</button>
+                    <button id="update-songs-btn" style="background-color: #f39c12;">更新歌曲数据</button>
+                </div>
+                <!-- **守护进程改造**: 新增自动重启开关 -->
+                <div style="margin-top: 15px; display: flex; align-items: center;">
+                    <label for="auto-restart-switch" style="margin-right: 10px; font-weight: bold;">自动重启守护</label>
+                    <input type="checkbox" id="auto-restart-switch" style="width: 20px; height: 20px; cursor: pointer;">
+                </div>
+            </div>
+
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary-color); padding-bottom: 10px; margin-bottom: 15px;">
+                    <h2 style="border-bottom: none; margin: 0;">识别监控</h2>
+                    <div style="display: flex; align-items: center;">
+                        <label for="monitoring-switch" style="margin-right: 10px; font-weight: bold;">保留临时文件</label>
+                        <input type="checkbox" id="monitoring-switch" style="width: 20px; height: 20px; cursor: pointer;">
+                    </div>
+                </div>
+                <div id="monitoring-content" style="display: none;">
+                    <button id="refresh-files-btn">刷新文件列表</button>
+                    <div id="file-lists">
+                        <!-- 文件列表将由JS动态填充 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- **反馈功能**: 新增反馈卡片 -->
+            <div class="card feedback-container">
+                <h2>用户反馈</h2>
+                <button id="refresh-feedback-btn">刷新反馈</button>
+                <div id="feedback-container">正在加载反馈...</div>
+            </div>
+
+            <div class="card log-container">
+                <h2>实时日志</h2>
+                <button id="refresh-logs-btn">刷新日志</button>
+                <pre id="log-content">正在加载日志...</pre>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        const statusElement = document.getElementById('app-status');
+        const pidElement = document.getElementById('app-pid');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const logContentElement = document.getElementById('log-content');
+        const refreshLogsBtn = document.getElementById('refresh-logs-btn');
+        const fileListsContainer = document.getElementById('file-lists');
+        const refreshFilesBtn = document.getElementById('refresh-files-btn');
+        const toastElement = document.getElementById('toast');
+        const monitoringSwitch = document.getElementById('monitoring-switch');
+        const monitoringContent = document.getElementById('monitoring-content');
+        const updateSongsBtn = document.getElementById('update-songs-btn');
+        const autoRestartSwitch = document.getElementById('auto-restart-switch'); // **守护进程改造**
+        // **反馈功能**: 获取新元素
+        const feedbackContainer = document.getElementById('feedback-container');
+        const refreshFeedbackBtn = document.getElementById('refresh-feedback-btn');
+
+        // --- Toast 通知 ---
+        function showToast(message, isError = false) {
+            toastElement.textContent = message;
+            toastElement.style.backgroundColor = isError ? 'var(--accent-red)' : 'var(--accent-green)';
+            toastElement.classList.add('show');
+            setTimeout(() => {
+                toastElement.classList.remove('show');
+            }, 3000);
+        }
+
+        // --- API 调用函数 ---
+        async function apiCall(endpoint, options = {}) {
+            try {
+                const response = await fetch(endpoint, options);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || '请求失败');
+                }
+                return data;
+            } catch (error) {
+                showToast(error.message, true);
+                throw error;
+            }
+        }
+
+        // --- 功能函数 ---
+        async function updateStatus() {
+            try {
+                const data = await apiCall('/api/status');
+                
+                // **守护进程改造**: 更新自动重启开关的状态
+                autoRestartSwitch.checked = data.auto_restart_enabled;
+
+                switch (data.status) {
+                    case 'Running':
+                        statusElement.textContent = '运行中';
+                        statusElement.className = 'status-indicator status-running';
+                        pidElement.textContent = `(PID: ${data.pid})`;
+                        startBtn.disabled = true;
+                        stopBtn.disabled = false;
+                        break;
+                    case 'Crashed':
+                        statusElement.textContent = '已崩溃';
+                        statusElement.className = 'status-indicator status-crashed';
+                        pidElement.textContent = '(等待守护线程重启...)';
+                        startBtn.disabled = true; // 正在自动重启，禁止手动操作
+                        stopBtn.disabled = true;
+                        break;
+                    case 'Stopped':
+                    default:
+                        statusElement.textContent = '已停止';
+                        statusElement.className = 'status-indicator status-stopped';
+                        pidElement.textContent = '';
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                        break;
+                }
+            } catch (error) {
+                console.error('Failed to update status:', error);
+            }
+        }
+
+        async function updateLogs() {
+            try {
+                const data = await apiCall('/api/logs');
+                logContentElement.textContent = data.logs || data.error || '无法加载日志。';
+                // 自动滚动到底部
+                logContentElement.scrollTop = logContentElement.scrollHeight;
+            } catch (error) {
+                console.error('Failed to update logs:', error);
+            }
+        }
+
+        async function initializeMonitoring() {
+            try {
+                const data = await apiCall('/api/monitoring_status');
+                monitoringSwitch.checked = data.enabled;
+                updateMonitoringContentVisibility(data.enabled);
+                if (data.enabled) {
+                    updateFiles();
+                }
+            } catch (error) {
+                console.error('Failed to initialize monitoring status:', error);
+            }
+        }
+
+        function updateMonitoringContentVisibility(isEnabled) {
+            monitoringContent.style.display = isEnabled ? 'block' : 'none';
+        }
+
+        async function updateFiles() {
+            if (!monitoringSwitch.checked) {
+                return;
+            }
+            try {
+                const data = await apiCall('/api/files');
+                if (data.message) { // 处理监控关闭时的消息
+                    fileListsContainer.innerHTML = `<p>${data.message}</p>`;
+                    return;
+                }
+                let html = '<h3>Uploads</h3><ul class="file-list">';
+                if (data.uploads && data.uploads.length > 0) {
+                    data.uploads.forEach(file => {
+                        html += `<li><span>${file}</span><button class="delete-btn" data-type="uploads" data-name="${file}">删除</button></li>`;
+                    });
+                } else {
+                    html += '<li>没有文件</li>';
+                }
+                html += '</ul>';
+
+                html += '<h3>Runs</h3><ul class="file-list">';
+                if (data.runs && data.runs.length > 0) {
+                    data.runs.forEach(file => {
+                        html += `<li><span>${file}</span><button class="delete-btn" data-type="runs" data-name="${file}">删除</button></li>`;
+                    });
+                } else {
+                    html += '<li>没有文件</li>';
+                }
+                html += '</ul>';
+                fileListsContainer.innerHTML = html;
+            } catch (error) {
+                fileListsContainer.innerHTML = '<p style="color: red;">无法加载文件列表。</p>';
+                console.error('Failed to update files:', error);
+            }
+        }
+
+        async function deleteFile(type, name) {
+            if (!confirm(`确定要删除 ${type} 目录下的 '${name}' 吗？此操作不可恢复。`)) return;
+            try {
+                const data = await apiCall('/api/delete_file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type, name })
+                });
+                showToast(data.message);
+                updateFiles(); // 刷新文件列表
+            } catch (error) {
+                console.error('Delete failed:', error);
+            }
+        }
+
+        // **反馈功能**: 新增获取和渲染反馈的函数
+        async function updateFeedback() {
+            try {
+                const feedbackData = await apiCall('/api/feedback');
+                if (feedbackData.error) {
+                    feedbackContainer.innerHTML = `<p style="color: red;">${feedbackData.error}</p>`;
+                    return;
+                }
+                if (feedbackData.length === 0) {
+                    feedbackContainer.innerHTML = '<p>暂无用户反馈。</p>';
+                    return;
+                }
+
+                let tableHtml = '<table class="feedback-table"><thead><tr><th>时间</th><th>用户</th><th>类型</th><th>内容</th><th>联系方式</th></tr></thead><tbody>';
+                feedbackData.forEach(item => {
+                    tableHtml += `
+                        <tr>
+                            <td>${item.timestamp || 'N/A'}</td>
+                            <td>${item.username || 'N/A'}</td>
+                            <td>${item.type || 'N/A'}</td>
+                            <td class="content-cell">${item.content || ''}</td>
+                            <td>${item.contact || '未提供'}</td>
+                        </tr>
+                    `;
+                });
+                tableHtml += '</tbody></table>';
+                feedbackContainer.innerHTML = tableHtml;
+            } catch (error) {
+                feedbackContainer.innerHTML = `<p style="color: red;">无法加载反馈信息。</p>`;
+                console.error('Failed to update feedback:', error);
+            }
+        }
+
+        // --- 事件监听 ---
+        startBtn.addEventListener('click', async () => {
+            try {
+                const data = await apiCall('/api/start', { method: 'POST' });
+                showToast(data.message);
+                updateStatus();
+            } catch (error) {
+                console.error('Start failed:', error);
+            }
+        });
+
+        stopBtn.addEventListener('click', async () => {
+            if (!confirm('确定要停止主应用吗？')) return;
+            try {
+                const data = await apiCall('/api/stop', { method: 'POST' });
+                showToast(data.message);
+                updateStatus();
+            } catch (error) {
+                console.error('Stop failed:', error);
+            }
+        });
+
+        refreshLogsBtn.addEventListener('click', updateLogs);
+        refreshFilesBtn.addEventListener('click', updateFiles);
+        refreshFeedbackBtn.addEventListener('click', updateFeedback); // **反馈功能**
+
+        updateSongsBtn.addEventListener('click', async () => {
+            if (!confirm('即将检查并更新歌曲数据。为确保数据一致性，此操作需要在主应用停止时进行。\n\n确定要继续吗？')) {
+                return;
+            }
+            
+            updateSongsBtn.disabled = true;
+            updateSongsBtn.textContent = '正在更新...';
+
+            try {
+                // 使用 POST 方法调用新的 API 端点
+                const response = await fetch('/api/update_songs', { method: 'POST' });
+                const data = await response.json();
+                
+                // 不论成功或失败，都显示后端返回的消息
+                showToast(data.message, response.status !== 200);
+
+            } catch (error) {
+                showToast(`请求更新时出错: ${error}`, true);
+            } finally {
+                // 恢复按钮状态
+                updateSongsBtn.disabled = false;
+                updateSongsBtn.textContent = '更新歌曲数据';
+            }
+        });
+
+        autoRestartSwitch.addEventListener('change', async () => {
+            try {
+                const data = await apiCall('/api/toggle_auto_restart', { method: 'POST' });
+                showToast(data.message);
+            } catch (error) {
+                console.error('Toggle auto-restart failed:', error);
+                autoRestartSwitch.checked = !autoRestartSwitch.checked; // 失败时回滚状态
+            }
+        });
+
+        monitoringSwitch.addEventListener('change', async () => {
+            try {
+                const data = await apiCall('/api/toggle_monitoring', { method: 'POST' });
+                showToast(data.message);
+                updateMonitoringContentVisibility(data.enabled);
+                if (data.enabled) {
+                    updateFiles();
+                } else {
+                    fileListsContainer.innerHTML = ''; // 关闭时清空内容
+                }
+            } catch (error) {
+                console.error('Toggle monitoring failed:', error);
+                monitoringSwitch.checked = !monitoringSwitch.checked; // 失败时回滚状态
+            }
+        });
+
+        // 使用事件委托处理删除按钮的点击
+        fileListsContainer.addEventListener('click', (event) => {
+            if (event.target.classList.contains('delete-btn')) {
+                const type = event.target.dataset.type;
+                const name = event.target.dataset.name;
+                deleteFile(type, name);
+            }
+        });
+        
+        // --- 页面初始化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            updateStatus();
+            updateLogs();
+            initializeMonitoring();
+            updateFeedback(); // **反馈功能**: 页面加载时初始化
+            // 每5秒自动刷新状态和日志
+            setInterval(updateStatus, 5000);
+            setInterval(updateLogs, 5000);
+        });
+    </script>
+</body>
+</html>

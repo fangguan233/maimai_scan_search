@@ -2,43 +2,127 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- **终极优化**: 彻底禁用缩放，实现原生App体验 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
     <title>Maimai 歌曲识别</title>
+
+    <!-- **核心修改**: PWA 和 iOS 全屏配置 -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Maimai Scan">
+
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f0f2f5;
-            color: #333;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
+        /* --- **终极形态锁定**: 彻底根除横向滚动 --- */
+        *, *::before, *::after {
+            box-sizing: border-box;
         }
-        .container {
-            background-color: #fff;
-            padding: 40px;
+        /* --- 全局重置和基础样式 --- */
+        :root {
+            --primary-color: #1877f2;
+            --background-color: #f0f2f5;
+            --container-bg: #ffffff;
+            --text-color: #333;
+            --text-light: #888;
+            --accent-green: #42b72a;
+            --accent-red: #d93025;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            /* **终极形态锁定**: 彻底禁止水平滚动 */
+            overflow-x: hidden;
+        }
+
+        /* --- 主应用容器 --- */
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%; /* 强制容器宽度为100% */
+            overflow-x: hidden; /* 再次确保容器本身不溢出 */
+        }
+
+        /* --- 页面内容区 --- */
+        .content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+            padding-bottom: 80px; /* 为底部导航栏留出空间 */
+        }
+        .page {
+            display: none; /* 默认所有页面都隐藏 */
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        .page.active {
+            display: block; /* active的页面才显示 */
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* --- 底部导航栏 --- */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background-color: var(--container-bg);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .nav-button {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: var(--text-light);
+            font-size: 12px;
+            cursor: pointer;
+            transition: color 0.2s;
+            flex-grow: 1;
+            height: 100%;
+        }
+        .nav-button.active {
+            color: var(--primary-color);
+        }
+        .nav-button svg {
+            width: 24px;
+            height: 24px;
+            margin-bottom: 4px;
+        }
+
+        /* --- 扫描页面和结果页面的特定样式 --- */
+        .scan-container, .result-container {
+            background-color: var(--container-bg);
+            padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
             text-align: center;
-            width: 90%;
-            max-width: 500px;
         }
         h1 {
-            color: #1877f2;
+            color: var(--primary-color);
+            margin-top: 0;
             margin-bottom: 20px;
-        }
-        #upload-form {
-            margin-bottom: 20px;
-        }
-        input[type="file"] {
-            display: none;
         }
         .upload-label {
-            background-color: #42b72a;
+            display: inline-block;
+            background-color: var(--accent-green);
             color: white;
-            padding: 12px 20px;
-            border-radius: 5px;
+            padding: 12px 25px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 16px;
             transition: background-color 0.3s;
@@ -46,76 +130,935 @@
         .upload-label:hover {
             background-color: #36a420;
         }
-        #file-name {
-            margin-top: 10px;
-            font-style: italic;
-            color: #666;
-        }
         #loader {
             border: 4px solid #f3f3f3;
             border-radius: 50%;
-            border-top: 4px solid #3498db;
+            border-top: 4px solid var(--primary-color);
             width: 40px;
             height: 40px;
-            animation: spin 2s linear infinite;
+            animation: spin 1.5s linear infinite;
             display: none;
-            margin: 20px auto;
+            margin: 30px auto;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        #result {
-            margin-top: 20px;
+        .error {
+            color: var(--accent-red);
+            font-weight: bold;
+        }
+        .prompt-text {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: 15px;
+        }
+        #result-table {
+            width:100%; 
+            border-collapse: collapse;
             text-align: left;
+            margin-top: 20px;
+        }
+        /* --- 全新UI重构: 结果展示页样式 --- */
+        .song-details-container {
+            background: linear-gradient(180deg, #f4f3ff 0%, #ffffff 100%);
+            padding: 15px;
+            border-radius: 12px;
+        }
+        .song-header {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .song-header .cover {
+            width: 100px;
+            height: 100px;
+            border-radius: 8px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .song-header .info {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-width: 0;
+        }
+        .song-header .title-id {
+            font-size: 12px;
+            color: #9c27b0;
+        }
+        .song-header .title {
+            font-size: 20px;
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .favorite-btn {
+            position: absolute;
+            /* **V5修正**: 移动到父容器右上角 */
+            top: 10px;
+            right: 10px;
+            font-size: 28px;
+            cursor: pointer;
+            color: #ccc;
+            transition: color 0.2s, transform 0.2s;
+            z-index: 1; /* 确保在其他元素之上 */
+        }
+        .favorite-btn.favorited {
+            color: #ffc107;
+            transform: scale(1.2);
+        }
+        .song-header .basic-info {
+            font-size: 12px;
+            color: var(--text-light);
+        }
+        .difficulty-selector {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .difficulty-selector button {
+            padding: 8px 5px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            background-color: #f5f5f5;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s ease;
+        }
+        .difficulty-selector button.active {
+            color: white;
+            font-weight: bold;
+            border-width: 2px;
+        }
+        .difficulty-selector button.active.basic { background-color: #2dbd64; border-color: #2dbd64; }
+        .difficulty-selector button.active.advanced { background-color: #f9a825; border-color: #f9a825; }
+        .difficulty-selector button.active.expert { background-color: #f44336; border-color: #f44336; }
+        .difficulty-selector button.active.master { background-color: #9c27b0; border-color: #9c27b0; }
+        .difficulty-selector button.active.remaster { background-color: #ab47bc; border-color: #ab47bc; }
+
+        .details-card {
+            background-color: rgba(255, 255, 255, 0.7);
+            border: 1px solid #eee;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .details-grid .item .label, .notes-grid .item .label {
+            font-size: 12px;
+            color: var(--text-light);
+        }
+        .details-grid .item .value, .notes-grid .item .value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            text-align: center;
+            margin-top: 15px;
+        }
+        .player-score-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative; /* **V5修正**: 作为收藏按钮的定位父级 */
+        }
+        .player-score-card .score-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #9c27b0;
+        }
+        /* --- 全新UI重构: 分数详情表 --- */
+        .score-table-container {
+            margin-top: 15px;
+            overflow-x: auto; /* 允许表格在小屏幕上横向滚动 */
+        }
+        .score-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            text-align: center;
+        }
+        .score-table th, .score-table td {
+            border: 1px solid #e0e0e0;
+            padding: 8px 4px;
+        }
+        .score-table th {
+            background-color: #8c52ff;
+            color: white;
+            font-weight: bold;
+        }
+        .score-table .difficulty-cell {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        .score-table .player-score-highlight {
+            background-color: #fff9c4;
+            font-weight: bold;
+        }
+        .score-table .gain {
+            color: var(--accent-green);
+            font-size: 10px;
+        }
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .action-buttons button, .action-buttons a {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            background-color: #9c27b0;
+            color: white;
+            text-align: center;
+            font-size: 14px;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .action-buttons button:disabled {
+            background-color: #e0e0e0;
+            cursor: not-allowed;
+        }
+
+        /* --- **历史记录页面样式** --- */
+        #history-list {
+            list-style: none;
+            padding: 0;
+        }
+        .history-item {
+            background-color: var(--container-bg);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .history-item-info {
+            /* **终极UI健壮性修复**: 限制宽度并启用flex布局 */
+            flex-grow: 1;
+            min-width: 0; /* 允许flex item收缩 */
+            font-size: 14px;
+        }
+        .history-item-info .title {
+            font-weight: bold;
+            color: var(--text-color);
+            /* **终极UI健壮性修复**: 应用文本溢出省略效果 */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .history-item-info .time {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: 4px;
+        }
+        .history-item-actions {
+            /* **终极UI健壮性修复**: 防止按钮区域被压缩 */
+            flex-shrink: 0;
+        }
+        .history-item-actions button {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 6px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 8px;
+            font-size: 12px;
+        }
+        .history-item-actions .delete-btn {
+            color: var(--accent-red);
+            border-color: var(--accent-red);
+        }
+        #clear-history-btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: var(--accent-red);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 16px;
+        }
+
+        /* --- **详情弹窗 (Modal) 样式** --- */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
             padding: 20px;
+            border: 1px solid #888;
+            width: 85%;
+            max-width: 500px;
+            border-radius: 10px;
+            position: relative;
+        }
+        .close-btn {
+            color: #aaa;
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        /* --- **新增**: 封面图片样式 --- */
+        .song-cover {
+            width: 100%;
+            max-width: 200px;
+            height: auto;
+            border-radius: 8px;
+            margin: 0 auto 20px auto;
+            display: block;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .history-item-cover {
+            width: 50px;
+            height: 50px;
+            border-radius: 5px;
+            margin-right: 15px;
+            object-fit: cover;
+        }
+        /* --- **新增**: 主页搜索框样式 --- */
+        .search-bar {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        /* --- **新增**: 主页Rating显示样式 --- */
+        .home-rating-container {
+            /* **终极改造**: 移除静态背景，由JS动态控制 */
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            margin-top: 20px; /* **终极改造**: 调整为在搜索框下方显示 */
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+            /* **终极修复**: 移除导致样式应用失败的transition属性 */
+        }
+        .home-rating-container .label {
+            font-size: 16px;
+            opacity: 0.8;
+        }
+        .home-rating-container .value {
+            font-size: 36px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        #search-input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px 0 0 8px;
+            font-size: 16px;
+        }
+        #search-button {
+            padding: 0 20px;
+            border: 1px solid var(--primary-color);
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 0 8px 8px 0;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        /* --- **新增**: 登录弹窗样式 --- */
+        #login-modal .modal-content {
+            margin-top: 25%;
+        }
+        .login-form input {
+            width: calc(100% - 24px);
+            padding: 12px;
+            margin-bottom: 15px;
             border: 1px solid #ddd;
             border-radius: 5px;
-            background-color: #fafafa;
+            font-size: 16px;
         }
-        .error {
-            color: #d93025;
+        .login-form button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .security-warning {
+            font-size: 12px;
+            color: var(--text-light);
+            background-color: #f0f2f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        #logout-button, #refresh-profile-btn {
+            width: calc(50% - 30px);
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        #logout-button {
+            background-color: var(--accent-red);
+            color: white;
+            float: right;
+            margin-right: 20px;
+        }
+        #refresh-profile-btn {
+            background-color: var(--primary-color);
+            color: white;
+            float: left;
+            margin-left: 20px;
+        }
+
+        /* B50 Button on Home Page */
+        .rating-wrapper {
+            position: relative;
+        }
+        #b50-button-home {
+            position: absolute;
+            bottom: 10px;
+            right: 10px; /* 修改为右对齐 */
+            background-color: rgba(0, 0, 0, 0.4);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 20px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .home-interactive-zone {
+            display: grid;
+            /* **留言板改造**: 改为两列布局 */
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        #favorites-button-home, #feedback-button-home {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            /* **留言板改造**: 宽度自动撑满Grid单元格 */
+            width: 100%; 
+            background-color: var(--container-bg);
+            color: var(--text-color);
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
             font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            padding: 10px; /* **留言板改造**: 增加内边距 */
+            /* 高度将由JS动态设定 */
+        }
+        #b50-button-home:hover {
+            background-color: rgba(0, 0, 0, 0.6);
+        }
+
+        /* --- B50 Modal Styles --- */
+        #b50-modal .modal-content {
+            width: 95%;
+            max-width: 800px;
+            margin: 5% auto;
+        }
+        .b50-grid-class {
+            display: grid;
+            /* **终极自适应修正**: 采用真正的自适应网格，允许项目收缩以适应小屏幕 */
+            grid-template-columns: repeat(auto-fit, minmax(65px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .b50-item {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            /* **终极形态修正**: 应用完整的、3px宽的边框 */
+            border: 3px solid transparent;
+            cursor: pointer; /* **新增**: 增加点击手势 */
+        }
+        .b50-item img {
+            width: 100%;
+            height: auto;
+            border-radius: 5px;
+        }
+        .b50-item .title {
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 8px;
+            /* **终极形态强制两行**: 强制容器为两行高度，多余省略，不足留白 */
+            height: 2.4em; /* 强制两行高度 (1.2em * 2) */
+            line-height: 1.2em;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            text-overflow: ellipsis;
+            word-break: break-all;
+        }
+        /* **终极形态改造**: 全新B50项目样式 */
+        .b50-item .achievements {
+            font-size: 8px; /* **终极形态锁定**: 继续缩小字体 */
+            font-weight: bold;
+            color: #333;
+            margin-top: 5px;
+        }
+        .b50-item .stats, .b50-item .dx-score {
+            font-size: 11px;
+            color: #555;
+            margin-top: 2px;
+        }
+        .b50-item .rank {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background-color: rgba(0,0,0,0.6);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .b50-item-inner {
+            position: relative;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Maimai 歌曲名称识别</h1>
-        <form id="upload-form">
-            <label for="file-upload" class="upload-label">选择或拍摄图片</label>
-            <input id="file-upload" type="file" name="file" accept="image/*" capture="environment">
-            <div id="file-name">未选择文件</div>
-        </form>
-        <div id="loader"></div>
-        <div id="result" style="display:none;"></div>
+
+    <div class="app-container">
+        <!-- 页面内容区 -->
+        <main class="content">
+            <!-- 主页 -->
+            <div id="page-home" class="page">
+                <div class="search-bar">
+                    <input type="search" id="search-input" placeholder="输入歌曲名称或ID...">
+                    <button id="search-button">搜索</button>
+                </div>
+            <!-- **宇宙终极修正**: 采用JS动态等高方案 -->
+            <div class="home-interactive-zone">
+                <!-- **留言板改造**: 将Rating卡片移出Grid，使其能横跨两列 -->
+                <div class="rating-wrapper" style="grid-column: 1 / -1;">
+                    <div id="home-rating-display" class="home-rating-container" style="display: none;">
+                        <div class="label">Player Rating</div>
+                        <div class="value">...</div>
+                        <button id="b50-button-home">查询B50</button>
+                    </div>
+                </div>
+                <!-- **留言板改造**: 两个按钮并排放置 -->
+                <button id="favorites-button-home">⭐ 我的收藏</button>
+                <button id="feedback-button-home">📝 留言反馈</button>
+            </div>
+                <div id="home-loader" style="display: none; margin: 30px auto;"></div>
+                <!-- 搜索结果将显示在弹窗中 -->
+            </div>
+
+            <!-- 扫描/结果页 -->
+            <div id="page-scan" class="page">
+                <div class="scan-container">
+                    <h1>Maimai 歌曲识别</h1>
+                    <form id="upload-form" style="display: none;">
+                        <input id="file-upload" type="file" name="file" accept="image/*" capture="environment">
+                    </form>
+                    <div id="loader"></div>
+                    <div id="result-display"></div>
+                    <p id="scan-prompt" class="prompt-text">点击下方中间的“扫描”按钮开始识别</p>
+                </div>
+            </div>
+
+            <!-- 个人主页 -->
+            <div id="page-profile" class="page">
+                <h1>我的资料</h1>
+                <div id="profile-container" class="result-container" style="text-align: left; padding: 20px;">
+                    <!-- 个人资料将由JS动态填充 -->
+                    <p>正在加载...</p>
+                </div>
+                <div style="overflow: hidden; width: 100%;"> <!-- 清除浮动 -->
+                    <button id="refresh-profile-btn">更新数据</button>
+                    <button id="logout-button">安全登出</button>
+                </div>
+            </div>
+
+            <!-- **新增**: 历史记录页面 -->
+            <div id="page-history" class="page">
+                <h1>历史记录</h1>
+                <ul id="history-list">
+                    <!-- 历史记录将由JS动态填充 -->
+                </ul>
+                <button id="clear-history-btn" style="display: none;">清空所有记录</button>
+            </div>
+        </main>
+
+        <!-- 底部导航栏 -->
+        <nav class="bottom-nav">
+            <button class="nav-button" data-page="home">
+                <svg fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                <span>主页</span>
+            </button>
+            <button class="nav-button" data-page="scan">
+                <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm-2 4h4v-1.09c-1.12-.23-2.88-.23-4 0V16zm10-2c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6 6 2.69 6 6zm-2 0c0-2.21-1.79-4-4-4s-4 1.79-4 4 1.79 4 4 4 4-1.79 4-4zM3 5H1v16c0 1.1.9 2 2 2h16v-2H3V5zm18-4H7c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm-2 16H7V3h14v14z"/></svg>
+                <span>扫描</span>
+            </button>
+            <button class="nav-button" data-page="history">
+                <svg fill="currentColor" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8H12z"/></svg>
+                <span>历史</span>
+            </button>
+            <button class="nav-button" data-page="profile">
+                <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                <span>我的</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- **新增**: 历史详情弹窗 -->
+    <div id="history-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <div id="modal-result-display"></div>
+        </div>
+    </div>
+
+    <!-- **新增**: 登录弹窗 -->
+    <div id="login-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>登录 Diving-Fish</h3>
+            <form id="login-form" class="login-form">
+                <input type="text" id="username-input" placeholder="Diving-Fish 用户名" required>
+                <input type="password" id="password-input" placeholder="密码" required>
+                <button type="submit">登录</button>
+            </form>
+            <p id="login-error" class="error" style="display: none;"></p>
+            <div class="security-warning">
+                <strong>安全提示:</strong> 您正在提供Diving-Fish的用户名和密码。我们不会存储您的密码，仅用于单次登录验证。请确保不要在公共场合操作，并避免使用常用密码。
+            </div>
+            <div style="text-align: center; margin-top: 20px; font-size: 14px;">
+                <a href="https://www.diving-fish.com/maimaidx/prober/" target="_blank" rel="noopener noreferrer" style="color: var(--primary-color); text-decoration: none;">
+                    没有注册水鱼？
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- **终极交互升级**: 自定义提示弹窗 -->
+    <div id="custom-alert-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="text-align: center; max-width: 300px;">
+            <h3 id="custom-alert-title" style="margin-top: 0;">提示</h3>
+            <p id="custom-alert-message" style="margin: 20px 0; font-size: 16px;"></p>
+            <button id="custom-alert-close-btn" style="width: 100%; padding: 12px; background-color: var(--primary-color); color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">确定</button>
+        </div>
+    </div>
+
+    <!-- B50 Modal -->
+    <div id="b50-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Best 50</h2>
+            <div id="b50-loader" style="display: none; border: 4px solid #f3f3f3; border-radius: 50%; border-top: 4px solid var(--primary-color); width: 40px; height: 40px; animation: spin 1.5s linear infinite; margin: 30px auto;"></div>
+            <div id="b50-container" style="display: none;">
+                <h3>Best 35 (旧版本乐曲)</h3>
+                <div id="b35-grid" class="b50-grid-class"></div>
+                <hr style="margin: 20px 0; border: 1px solid #eee;">
+                <h3>Best 15 (新版本乐曲)</h3>
+                <div id="b15-grid" class="b50-grid-class"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Favorites Modal -->
+    <div id="favorites-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>我的收藏</h2>
+            <div id="favorites-list-container">
+                <!-- Favorite songs will be listed here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- **留言板改造**: 新增反馈弹窗 -->
+    <div id="feedback-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>留言反馈</h2>
+            <form id="feedback-form">
+                <div style="margin-bottom: 15px;">
+                    <label for="feedback-type" style="display: block; margin-bottom: 5px;">反馈类型:</label>
+                    <select id="feedback-type" required style="width: 100%; padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                        <option value="suggestion">功能建议</option>
+                        <option value="bug">Bug反馈</option>
+                        <option value="other">其他</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label for="feedback-content" style="display: block; margin-bottom: 5px;">详细内容:</label>
+                    <textarea id="feedback-content" rows="6" required style="width: 100%; padding: 8px; border-radius: 5px; border: 1px solid #ddd; resize: vertical;"></textarea>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label for="feedback-contact" style="display: block; margin-bottom: 5px;">联系方式 (可选):</label>
+                    <input type="text" id="feedback-contact" placeholder="QQ / 邮箱 / B站用户名" style="width: 100%; padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                </div>
+                <button type="submit" id="submit-feedback-btn" style="width: 100%; padding: 12px; background-color: var(--primary-color); color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">提交反馈</button>
+            </form>
+        </div>
     </div>
 
     <script>
-        const form = document.getElementById('upload-form');
-        const fileInput = document.getElementById('file-upload');
-        const fileNameDisplay = document.getElementById('file-name');
-        const loader = document.getElementById('loader');
-        const resultDiv = document.getElementById('result');
+        // --- **终极缓存架构**: 本地歌曲数据库与收藏夹帮助函数 ---
+        const SONG_DB_KEY = 'maimaiSongDatabase';
+        const FAVORITES_KEY = 'maimaiFavorites';
 
+        function getSongDatabase() {
+            return JSON.parse(localStorage.getItem(SONG_DB_KEY) || '{}');
+        }
+
+        function getSongFromDatabase(songId) {
+            const db = getSongDatabase();
+            return db[songId] || null;
+        }
+
+        function getFavorites() {
+            return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+        }
+
+        function saveFavorites(favorites) {
+            localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+        }
+
+        function isFavorited(songId) {
+            return getFavorites().includes(songId.toString());
+        }
+
+        function toggleFavorite(songId, buttonElement) {
+            let favorites = getFavorites();
+            const songIdStr = songId.toString();
+            const index = favorites.indexOf(songIdStr);
+
+            if (index > -1) {
+                favorites.splice(index, 1); // Unfavorite
+                buttonElement.classList.remove('favorited');
+            } else {
+                favorites.unshift(songIdStr); // Favorite
+                buttonElement.classList.add('favorited');
+            }
+            saveFavorites(favorites);
+        }
+
+        // **终极缓存架构修复**: 新增一个专门用于保存整个歌曲数据数组的函数
+        function saveSongArrayToDatabase(songDataArray) {
+            // 确保我们有有效的数据
+            if (!songDataArray || songDataArray.length === 0) return;
+            
+            // 从数组的第一个元素获取ID
+            const songId = songDataArray[0].id;
+            if (!songId) {
+                console.error("[缓存写入失败] 歌曲数据缺少ID:", songDataArray);
+                return;
+            }
+
+            const db = getSongDatabase();
+            // 将整个数组存入数据库，键为歌曲ID
+            db[songId] = songDataArray;
+            localStorage.setItem(SONG_DB_KEY, JSON.stringify(db));
+            console.log(`[缓存写入] 歌曲ID: ${songId} (${songDataArray[0].basic_info.title}) 的完整数据已保存。`);
+        }
+
+        // --- DOM元素获取 ---
+        const pages = document.querySelectorAll('.page');
+        const navButtons = document.querySelectorAll('.nav-button');
+        const fileInput = document.getElementById('file-upload');
+        const loader = document.getElementById('loader');
+        const resultDisplay = document.getElementById('result-display');
+        const scanPrompt = document.getElementById('scan-prompt');
+        const homeResultDisplay = document.getElementById('home-result-display');
+        const searchInput = document.getElementById('search-input');
+        const searchButton = document.getElementById('search-button');
+        const homeLoader = document.getElementById('home-loader');
+        const historyList = document.getElementById('history-list');
+        const clearHistoryBtn = document.getElementById('clear-history-btn');
+        const historyModal = document.getElementById('history-modal');
+        const modalResultDisplay = document.getElementById('modal-result-display');
+        const closeModalBtn = document.querySelector('.close-btn');
+        const loginModal = document.getElementById('login-modal');
+        const loginForm = document.getElementById('login-form');
+        const usernameInput = document.getElementById('username-input');
+        const passwordInput = document.getElementById('password-input');
+        const loginError = document.getElementById('login-error');
+        const logoutButton = document.getElementById('logout-button');
+        const refreshProfileBtn = document.getElementById('refresh-profile-btn');
+        const b50Button = document.getElementById('b50-button-home');
+        const b50Modal = document.getElementById('b50-modal');
+        const b50Container = document.getElementById('b50-container');
+        const b15Grid = document.getElementById('b15-grid');
+        const b35Grid = document.getElementById('b35-grid');
+        const b50Loader = document.getElementById('b50-loader');
+        const b50CloseBtn = b50Modal.querySelector('.close-btn');
+        const favoritesButtonHome = document.getElementById('favorites-button-home');
+        const favoritesModal = document.getElementById('favorites-modal');
+        const favoritesListContainer = document.getElementById('favorites-list-container');
+        const favoritesCloseBtn = favoritesModal.querySelector('.close-btn');
+        // **留言板改造**: 获取新元素
+        const feedbackButtonHome = document.getElementById('feedback-button-home');
+        const feedbackModal = document.getElementById('feedback-modal');
+        const feedbackForm = document.getElementById('feedback-form');
+        const feedbackCloseBtn = feedbackModal.querySelector('.close-btn');
+        // **终极交互升级**: 自定义弹窗元素
+        const customAlertModal = document.getElementById('custom-alert-modal');
+        const customAlertMessage = document.getElementById('custom-alert-message');
+        const customAlertCloseBtn = document.getElementById('custom-alert-close-btn');
+        let customAlertCallback = null;
+
+        // --- 路由和页面切换逻辑 ---
+        function navigateTo(pageId) {
+            // 更新URL的hash
+            window.location.hash = pageId;
+            
+            // 切换页面显示
+            pages.forEach(page => {
+                page.classList.toggle('active', page.id === `page-${pageId}`);
+            });
+
+            // 更新导航按钮高亮
+            navButtons.forEach(button => {
+                button.classList.toggle('active', button.dataset.page === pageId);
+            });
+
+        // **终极改造**: 如果切换到个人资料页，则加载数据 (从缓存)
+        if (pageId === 'profile') {
+            loadProfileData(); // 默认从缓存加载
+        }
+        }
+
+        // --- 事件监听 ---
+        navButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const pageId = button.dataset.page;
+                if (pageId === 'scan') {
+                    // 如果点击的是扫描按钮，直接触发文件选择
+                    fileInput.click();
+                } else {
+                    navigateTo(pageId);
+                }
+            });
+        });
+
+        // 监听URL hash的变化 (例如，用户点击浏览器的前进/后退按钮)
+        window.addEventListener('hashchange', () => {
+            const pageId = window.location.hash.substring(1) || 'home';
+            navigateTo(pageId);
+        });
+
+        // 页面初始加载时，根据hash确定显示哪个页面
+        document.addEventListener('DOMContentLoaded', () => {
+            checkLogin();
+        // **终极改造**: 检查登录后立即尝试加载个人资料 (从缓存)，以便在主页显示Rating
+        if (localStorage.getItem('session_token')) {
+            loadProfileData(); // 默认从缓存加载
+        }
+            const initialPage = window.location.hash.substring(1) || 'home';
+            navigateTo(initialPage);
+            renderHistoryPage();
+        });
+
+        // --- **新增**: 主页搜索逻辑 ---
+        searchButton.addEventListener('click', handleSearch);
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSearch();
+            }
+        });
+
+        async function handleSearch() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            // **终极缓存架构**: ID搜索优先查询本地数据库
+            if (/^\d+$/.test(query)) {
+                const cachedSongArray = getSongFromDatabase(query);
+                if (cachedSongArray) {
+                    console.log(`[缓存命中] 从本地数据库加载歌曲ID: ${query}`);
+                    homeLoader.style.display = 'none'; // 确保加载动画被隐藏
+                    historyModal.style.display = 'block';
+                    // 注意：从缓存加载时，我们不知道用户的最新成绩，所以传null让displayResult去获取
+                    await displayResult(cachedSongArray, modalResultDisplay, true, null);
+                    return; // 命中缓存，终止执行
+                }
+            }
+
+            homeLoader.style.display = 'block';
+            
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query: query }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // **终极改造**: 在弹窗中显示结果
+                    historyModal.style.display = 'block';
+                    await displayResult(result, modalResultDisplay, true); // 第三个参数表示是搜索结果
+                } else {
+                    alert(result.error || '未找到匹配的歌曲');
+                }
+            } catch (error) {
+                alert('网络错误，无法连接到服务器。');
+            } finally {
+                homeLoader.style.display = 'none';
+            }
+        }
+
+        // --- 文件上传和处理逻辑 ---
         fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
-                const file = fileInput.files[0];
-                fileNameDisplay.textContent = file.name;
-                // 自动提交
+                // 切换到扫描页面并开始处理
+                navigateTo('scan');
                 handleSubmit();
-            } else {
-                fileNameDisplay.textContent = '未选择文件';
             }
         });
 
         async function handleSubmit() {
-            const maxRetries = 3; // 总共尝试3次 (1次初次 + 2次重试)
+            const maxRetries = 3;
             let attempt = 0;
 
+            // UI准备
             loader.style.display = 'block';
-            resultDiv.style.display = 'none';
-            resultDiv.innerHTML = '';
+            resultDisplay.innerHTML = '';
+            scanPrompt.style.display = 'none';
 
             while (attempt < maxRetries) {
                 attempt++;
@@ -131,28 +1074,30 @@
 
                     const result = await response.json();
 
-                    if (response.ok && !result.error) {
-                        // 成功，显示结果并退出循环
-                        displayResult(result);
-                        loader.style.display = 'none';
-                        resultDiv.style.display = 'block';
-                        return; 
-                    }
-                    
-                    // 如果是最后一次尝试，则显示错误并退出
-                    if (attempt >= maxRetries) {
-                        displayError(result.error || '服务器错误', result.details || result.ocr_text || `Status: ${response.status}`);
-                        break;
+                    if (response.ok) {
+                        if (result.error) {
+                            if (attempt >= maxRetries) {
+                                displayError(result.error, result.details);
+                                break;
+                            }
+                        } else {
+                            // **个性化改造**: displayResult现在是async并且会处理历史保存
+                            await displayResult(result); 
+                            return; // 成功后直接退出
+                        }
+                    } else {
+                        if (attempt >= maxRetries) {
+                            displayError('服务器错误', `Status: ${response.status}`);
+                            break;
+                        }
                     }
                     
                     console.log(`Attempt ${attempt} failed, retrying...`);
-                    // 短暂等待后重试
                     await new Promise(resolve => setTimeout(resolve, 500));
 
                 } catch (error) {
-                    // 如果是最后一次尝试，则显示错误并退出
                     if (attempt >= maxRetries) {
-                        displayError('上传失败', '无法连接到服务器。请检查服务器是否正在运行。');
+                        displayError('上传失败', '无法连接到服务器。');
                         break;
                     }
                     console.log(`Attempt ${attempt} failed with network error, retrying...`);
@@ -160,66 +1105,1067 @@
                 }
             }
             
-            // 所有尝试都失败后，隐藏加载动画并显示结果区域
+            // 所有尝试都失败后
             loader.style.display = 'none';
-            resultDiv.style.display = 'block';
         }
 
-        function displayResult(data) {
-            // 将 basic_info 的内容合并到顶层，方便处理
-            const flatData = { ...data.basic_info, id: data.id, type: data.type };
+        // --- 全新UI重构: 结果显示函数 ---
+        // 将数据存储在window对象上，以便后续函数访问
+        window.currentSongData = null;
+        window.currentScoresMap = null;
 
-            let tableHtml = `
-                <h3>识别结果</h3>
-                <table style="width:100%; border-collapse: collapse;">
-            `;
+        // --- **新增**: DX分数星级评定 ---
+        function getDxStars(dxScore, maxDxScore) {
+            if (!maxDxScore || maxDxScore === 0) {
+                return '';
+            }
+            const percentage = (dxScore / maxDxScore) * 100;
+            let starsHtml = '';
+            let starColor = '';
 
-            // 渲染基本信息
-            tableHtml += `
-                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">歌曲名称</td><td style="padding: 8px;">${flatData.title}</td></tr>
-                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">艺术家</td><td style="padding: 8px;">${flatData.artist}</td></tr>
-                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">BPM</td><td style="padding: 8px;">${flatData.bpm}</td></tr>
-                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">版本</td><td style="padding: 8px;">${flatData.from}</td></tr>
-                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">类型</td><td style="padding: 8px;">${flatData.type}</td></tr>
-                <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px; font-weight: bold; background-color: #f9f9f9;">ID</td><td style="padding: 8px;">${flatData.id}</td></tr>
-            `;
-
-            // 渲染谱面信息
-            if (data.charts && Array.isArray(data.charts)) {
-                const difficulties = ['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'];
-                let chartsContent = '<ul style="margin: 0; padding-left: 20px;">';
-                
-                data.charts.forEach((chart, i) => {
-                    const difficulty = difficulties[i] || 'Unknown';
-                    const level = data.level[i] || 'N/A';
-                    const ds = data.ds[i] || 'N/A';
-                    const charter = chart.charter || '-';
-                    chartsContent += `<li><strong>${difficulty}:</strong> ${level} (定数: ${ds}, 谱师: ${charter})</li>`;
-                });
-
-                chartsContent += '</ul>';
-                tableHtml += `
-                    <tr style="border-bottom: 1px solid #eee;">
-                        <td style="padding: 8px; font-weight: bold; background-color: #f9f9f9; vertical-align: top;">谱面信息</td>
-                        <td style="padding: 8px;">${chartsContent}</td>
-                    </tr>
-                `;
+            if (percentage >= 97) {
+                starColor = '#ffc107'; // 5 Stars - Yellow
+                starsHtml = '★★★★★';
+            } else if (percentage >= 95) {
+                starColor = '#f9a825'; // 4 Stars - Orange
+                starsHtml = '★★★★';
+            } else if (percentage >= 93) {
+                starColor = '#f9a825'; // 3 Stars - Orange
+                starsHtml = '★★★';
+            } else if (percentage >= 90) {
+                starColor = '#2dbd64'; // 2 Stars - Green
+                starsHtml = '★★';
+            } else if (percentage >= 85) {
+                starColor = '#2dbd64'; // 1 Star - Green
+                starsHtml = '★';
+            } else {
+                return ''; // No stars below 85%
             }
 
-            tableHtml += '</table>';
-            resultDiv.innerHTML = tableHtml;
+            return `<span class="dx-stars" style="color: ${starColor}; margin-left: 10px; font-size: 18px; vertical-align: middle;">${starsHtml}</span>`;
         }
 
-        function displayError(errorMsg, details) {
+        async function selectDifficulty(songType, chartIndex, containerElement) {
+            // **终极DOM作用域修复**: 所有选择器都基于传入的容器
+            // 1. 更新按钮的激活状态
+            containerElement.querySelectorAll('.difficulty-selector button').forEach(btn => btn.classList.remove('active'));
+            const button = containerElement.querySelector(`.difficulty-selector button[data-song-type="${songType}"][data-chart-index="${chartIndex}"]`);
+            if (button) {
+                button.classList.add('active');
+            }
+
+            // 2. 从全局变量中获取所需数据
+            const songData = window.currentSongData.find(s => s.type === songType);
+            if (!songData) return;
+
+            const chart = {
+                ds: songData.ds[chartIndex],
+                charter: songData.charts[chartIndex].charter,
+                notes: songData.charts[chartIndex].notes,
+            };
+            const score = window.currentScoresMap.get(`${songType}-${chartIndex}`);
+
+            // 3. 渲染谱面详情卡片 (动态生成Note网格)
+            const chartDetailsDisplay = containerElement.querySelector('#chart-details-display');
+            
+            const notes = chart.notes;
+            let notesGridHtml = '<div class="notes-grid">';
+            // 通用 Note: TAP, HOLD, SLIDE
+            notesGridHtml += `<div class="item"><div class="label">TAP</div><div class="value">${notes[0] || 0}</div></div>`;
+            notesGridHtml += `<div class="item"><div class="label">HOLD</div><div class="value">${notes[1] || 0}</div></div>`;
+            notesGridHtml += `<div class="item"><div class="label">SLIDE</div><div class="value">${notes[2] || 0}</div></div>`;
+
+            // BREAK Note (SD和DX都在索引3)
+            const breakValue = notes[3] || 0;
+            if (breakValue > 0) {
+                notesGridHtml += `<div class="item"><div class="label">BREAK</div><div class="value">${breakValue}</div></div>`;
+            }
+
+            // TOUCH Note (仅DX在索引4)
+            if (songData.type === 'DX') {
+                const touchValue = notes[4] || 0;
+                if (touchValue > 0) {
+                    notesGridHtml += `<div class="item"><div class="label">TOUCH</div><div class="value">${touchValue}</div></div>`;
+                }
+            }
+            notesGridHtml += '</div>';
+
+            chartDetailsDisplay.innerHTML = `
+                <div class="details-card">
+                    <div class="details-grid">
+                        <div class="item">
+                            <div class="label">官方定数</div>
+                            <div class="value">${chart.ds}</div>
+                        </div>
+                        <div class="item">
+                            <div class="label">谱面谱师</div>
+                            <div class="value">${chart.charter}</div>
+                        </div>
+                    </div>
+                    ${notesGridHtml}
+                </div>
+            `;
+
+            // 4. 渲染玩家成绩卡片
+            const playerScoreDisplay = containerElement.querySelector('#player-score-display');
+            if (score) {
+                const dxStarsHtml = getDxStars(score.dxScore, score.maxDxScore);
+                // **V5修正**: 将收藏按钮移动到成绩卡片内部
+                playerScoreDisplay.innerHTML = `
+                    <div class="details-card player-score-card">
+                        <span class="favorite-btn ${isFavorited(window.currentSongData[0].id) ? 'favorited' : ''}" data-song-id="${window.currentSongData[0].id}">★</span>
+                        <div>
+                            <div class="player-score-card .label" style="font-size:14px; color:var(--text-light);">玩家最佳成绩</div>
+                            <div class="score-value">${score.achievements.toFixed(4)}%</div>
+                            <div class="dx-score-display" style="font-size: 16px; color: #555; margin-top: 5px; display: flex; align-items: center;">
+                                <span>DX Score: <span style="font-weight: bold;">${score.dxScore}</span> / ${score.maxDxScore}</span>
+                                ${dxStarsHtml}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                 playerScoreDisplay.innerHTML = ``; // 未游玩则不显示成绩卡片
+            }
+
+            // 5. 渲染分数详情表
+            await renderScoreDetailTable(songData, chartIndex, score, containerElement);
+        }
+
+        // --- **最终版核心功能**: “推分”计算逻辑 (V4 - 增加日志监控) ---
+        async function renderScoreDetailTable(songData, chartIndex, playerScore, containerElement) {
+            console.clear(); // 清空控制台，方便查看本次日志
+            console.log("--- 开始渲染分数详情表 ---");
+            console.log("输入 - 歌曲数据:", songData);
+            console.log(`输入 - 谱面索引: ${chartIndex}, 定数: ${songData.ds[chartIndex]}`);
+            console.log("输入 - 玩家成绩:", playerScore);
+
+            const tableContainer = containerElement.querySelector('#score-table-display');
+            const chartConstant = songData.ds[chartIndex];
+            const songId = songData.id;
+
+            // **最终决定性修正 (V2)**: 根据用户的最终指示，只有 "PRiSM" 一个版本算作新歌
+            const newSongVersions = ["maimai でらっくす PRiSM"];
+            const isNewSong = newSongVersions.includes(songData.basic_info.from);
+            
+            console.log(`判断 - 歌曲ID: ${songId}, 版本: "${songData.basic_info.from}", 是否为新歌: ${isNewSong}`);
+
+            const ranks = [
+                { name: 'SSS+', achievement: 100.5000 },
+                { name: 'SSS',  achievement: 100.0000 },
+                { name: 'SS+',  achievement: 99.5000 },
+                { name: 'SS',   achievement: 99.0000 },
+                { name: 'S+',   achievement: 98.0000 },
+                { name: 'S',    achievement: 97.0000 }
+            ];
+
+            // 1. **终极健壮性修复**: 使用fetchWithAuth获取B50数据
+            let b50Data = null;
+            if (localStorage.getItem('session_token')) {
+                try {
+                    const response = await fetchWithAuth('/api/b50');
+                    if (response.ok) {
+                        b50Data = await response.json();
+                        console.log("日志 - 成功获取B50数据:", b50Data);
+                    } else {
+                        b50Data = null;
+                    }
+                } catch (e) {
+                    console.error("日志 - 获取B50时发生错误:", e.message);
+                    b50Data = null;
+                }
+            } else {
+                console.log("日志 - 未登录, 跳过B50获取。");
+            }
+
+            // 2. **核心逻辑重构**: 重新定义基准分(baseRa)的确定方式
+            let baseRa = 0;
+            if (b50Data) {
+                const b35 = b50Data.b35 || [];
+                const b15 = b50Data.b15 || [];
+                
+                console.log(`日志 - 开始在B50中查找: song_id=${songId}, level_index=${chartIndex}`);
+                const songInB50 = [...b15, ...b35].find(s => s.song_id == songId && s.level_index === chartIndex);
+
+                if (songInB50) {
+                    baseRa = songInB50.ra;
+                    console.log(`日志 - **命中**: 歌曲在B50中找到。基准分(baseRa)设置为歌曲当前的ra: ${baseRa}`, songInB50);
+                } else {
+                    console.log("日志 - **未命中**: 歌曲不在B50中。");
+                    if (isNewSong) {
+                        if (b15.length > 0) {
+                            baseRa = b15[b15.length - 1].ra;
+                            console.log(`日志 - 使用B15最低分作为基准分(baseRa): ${baseRa}`);
+                        } else {
+                            console.log("日志 - B15列表为空, 无法设置基准分。");
+                        }
+                    } else {
+                        if (b35.length > 0) {
+                            baseRa = b35[b35.length - 1].ra;
+                            console.log(`日志 - 使用B35最低分作为基准分(baseRa): ${baseRa}`);
+                        } else {
+                            console.log("日志 - B35列表为空, 无法设置基准分。");
+                        }
+                    }
+                }
+            } else {
+                console.log("日志 - 无B50数据, 无法计算基准分。");
+            }
+            console.log(`--- 基准分(baseRa)最终确定为: ${baseRa} ---`);
+
+            // 3. 渲染表格
+            let theoreticalRaRow = '<tr><td class="difficulty-cell">理论值</td>';
+            let gainRow = '<tr><td class="difficulty-cell">推分</td>';
+
+            console.log("--- 开始计算各评级推分 ---");
+            ranks.forEach(rank => {
+                const theoreticalRa = calculateDxRating(chartConstant, rank.achievement);
+                theoreticalRaRow += `<td>${theoreticalRa}</td>`;
+
+                if (baseRa > 0) {
+                    const gain = theoreticalRa - baseRa;
+                    console.log(`计算 - ${rank.name}: 理论分 ${theoreticalRa} - 基准分 ${baseRa} = 推分 ${gain}`);
+                    // **终极健壮性修复**: 明确处理gain为正数和非正数两种情况，防止UI卡死
+                    if (gain > 0) {
+                        gainRow += `<td class="player-score-highlight"><span class="gain">(+${gain})</span></td>`;
+                    } else {
+                        gainRow += `<td><span style="color: #aaa;">--</span></td>`;
+                    }
+                } else {
+                    console.log(`计算 - ${rank.name}: 无有效基准分, 无法计算推分。`);
+                    gainRow += `<td><span style="color: #aaa;">(N/A)</span></td>`;
+                }
+            });
+
+            theoreticalRaRow += '</tr>';
+            gainRow += '</tr>';
+
+            // **UI优化**: 增加评级表头
+            let headerRow = '<thead><tr><th></th>'; // 第一列留空
+            ranks.forEach(rank => {
+                headerRow += `<th>${rank.name}</th>`;
+            });
+            headerRow += '</tr></thead>';
+
+            const tableHtml = `
+                <div class="score-table-container">
+                    <table class="score-table">
+                        ${headerRow}
+                        <tbody>
+                            ${theoreticalRaRow}
+                            ${gainRow}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            tableContainer.innerHTML = tableHtml;
+        }
+
+        function getScoreMultiplier(achievement) {
+            const p = achievement;
+            if (p >= 100.5) return 0.224;
+            if (p >= 100.0) return 0.216 + (p - 100.0) * (0.224 - 0.216) / 0.5; // SSS -> SSS+
+            if (p >= 99.5) return 0.211 + (p - 99.5) * (0.216 - 0.211) / 0.5;   // SS+ -> SSS
+            if (p >= 99.0) return 0.208 + (p - 99.0) * (0.211 - 0.208) / 0.5;   // SS -> SS+
+            if (p >= 98.0) return 0.203 + (p - 98.0) * (0.208 - 0.203) / 1.0;   // S+ -> SS
+            if (p >= 97.0) return 0.200 + (p - 97.0) * (0.203 - 0.200) / 1.0;   // S -> S+
+            if (p >= 94.0) return 0.168 + (p - 94.0) * (0.200 - 0.168) / 3.0;   // AAA -> S
+            if (p >= 90.0) return 0.152 + (p - 90.0) * (0.168 - 0.152) / 4.0;   // AA -> AAA
+            if (p >= 80.0) return 0.136 + (p - 80.0) * (0.152 - 0.136) / 10.0;  // A -> AA
+            if (p >= 75.0) return 0.120 + (p - 75.0) * (0.136 - 0.120) / 5.0;   // BBB -> A
+            if (p >= 70.0) return 0.112 + (p - 70.0) * (0.120 - 0.112) / 5.0;   // BB -> BBB
+            if (p >= 60.0) return 0.096 + (p - 60.0) * (0.112 - 0.096) / 10.0;  // B -> BB
+            if (p >= 50.0) return 0.080 + (p - 50.0) * (0.096 - 0.080) / 10.0;  // C -> B
+            if (p >= 40.0) return 0.064 + (p - 40.0) * (0.080 - 0.064) / 10.0;  // D -> C
+            if (p >= 30.0) return 0.048 + (p - 30.0) * (0.064 - 0.048) / 10.0;
+            if (p >= 20.0) return 0.032 + (p - 20.0) * (0.048 - 0.032) / 10.0;
+            if (p >= 10.0) return 0.016 + (p - 10.0) * (0.032 - 0.016) / 10.0;
+            return 0;
+        }
+
+        function calculateDxRating(chartConstant, achievement) {
+            // **核心算法修正**: 任何超过100.5%的成绩，在计算Rating时都按100.5%计算
+            const p_calc = Math.min(achievement, 100.5);
+            const multiplier = getScoreMultiplier(p_calc);
+            const rating = chartConstant * p_calc * multiplier;
+            return Math.floor(rating);
+        }
+
+        async function displayResult(dataArray, targetElement = resultDisplay, isSearchResult = false, scoresFromHistory = null) {
+            // 阶段1: UI准备和数据预处理
+            if (targetElement === resultDisplay) loader.style.display = 'none';
+            if (targetElement === homeResultDisplay) homeLoader.style.display = 'none';
+
+            if (!dataArray || dataArray.length === 0) {
+                displayError('返回数据无效', '服务器返回了空的结果。', targetElement);
+                return;
+            }
+            
+            window.currentSongData = dataArray;
+            const firstSong = dataArray[0];
+            const commonInfo = firstSong.basic_info;
+            const coverUrl = firstSong.cover_url;
+
+            // 阶段2: 获取成绩
+            let scoresData = scoresFromHistory;
+            if (scoresData === null || typeof scoresData === 'undefined') {
+                if (localStorage.getItem('session_token')) {
+                    try {
+                        const scoreResponse = await fetchWithAuth('/api/player_score', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ song_id: firstSong.id })
+                        });
+                        scoresData = scoreResponse.ok ? await scoreResponse.json() : [];
+                    } catch (e) {
+                        console.error("查询成绩失败:", e.message);
+                        scoresData = [];
+                    }
+                } else {
+                    scoresData = [];
+                }
+            }
+            
+            const scoresMap = new Map();
+            if (scoresData && scoresData.length > 0) {
+                scoresData.forEach(score => scoresMap.set(`${score.type}-${score.level_index}`, score));
+            }
+            window.currentScoresMap = scoresMap;
+
+            saveSongArrayToDatabase(dataArray);
+
+            // 阶段3: 生成静态框架HTML
+            const difficultyLevels = ['Basic', 'Advan', 'Expert', 'Master', 'Re:Mas'];
+            const difficultyClasses = ['basic', 'advanced', 'expert', 'master', 'remaster'];
+            let difficultyButtonsHtml = '';
+            let initialSelect = { songType: null, chartIndex: -1, hasPlayed: false, highestDS: -1 };
+
+            dataArray.forEach(songData => {
+                songData.ds.forEach((level, index) => {
+                    const hasScore = scoresMap.has(`${songData.type}-${index}`);
+                    // **终极时序修复**: 移除内联onclick，为事件委托做准备
+                    difficultyButtonsHtml += `
+                        <button class="${difficultyClasses[index]}" data-song-type="${songData.type}" data-chart-index="${index}">
+                            ${difficultyLevels[index]}<br>${level}
+                        </button>`;
+                    
+                    if (hasScore && level > initialSelect.highestDS) {
+                        initialSelect = { songType: songData.type, chartIndex: index, hasPlayed: true, highestDS: level };
+                    } else if (!initialSelect.hasPlayed && level > initialSelect.highestDS) {
+                        initialSelect = { songType: songData.type, chartIndex: index, hasPlayed: false, highestDS: level };
+                    }
+                });
+            });
+
+            const finalHtml = `
+                <div class="song-details-container">
+                    <div class="song-header">
+                        <img src="${coverUrl}" class="cover" onerror="this.onerror=null;this.src='/image/404/404.png';">
+                        <div class="info">
+                            <div>
+                                <div class="title-id">#${firstSong.id}</div>
+                                <div class="title">${commonInfo.title}</div>
+                            </div>
+                            <div class="basic-info">
+                                BPM: ${commonInfo.bpm} | 版本: ${commonInfo.from}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="difficulty-selector">${difficultyButtonsHtml}</div>
+                    <div id="chart-details-display"></div>
+                    <div id="player-score-display"></div>
+                    <div id="score-table-display"></div>
+                    <div class="action-buttons" style="margin-top: 15px;">
+                        <a href="https://search.bilibili.com/all?keyword=maimai%20${encodeURIComponent(commonInfo.title)}" target="_blank">跳转B站看谱</a>
+                        <button disabled>查看别名</button>
+                    </div>
+                </div>
+            `;
+            targetElement.innerHTML = finalHtml;
+
+            // **终极时序修复**: 使用事件委托处理难度按钮和收藏按钮点击
+            const detailsContainer = targetElement.querySelector('.song-details-container');
+            if(detailsContainer) {
+                detailsContainer.addEventListener('click', (event) => {
+                    const target = event.target;
+                    // **V5修正**: 收藏按钮现在位于成绩卡片内，但事件委托仍在父容器上
+                    if (target.classList.contains('favorite-btn')) {
+                        toggleFavorite(target.dataset.songId, target);
+                    } else {
+                        const button = target.closest('button');
+                        if (button && button.parentElement.classList.contains('difficulty-selector')) {
+                            const songType = button.dataset.songType;
+                            const chartIndex = parseInt(button.dataset.chartIndex, 10);
+                            selectDifficulty(songType, chartIndex, targetElement);
+                        }
+                    }
+                });
+            }
+
+            // **终极时序修复**: 使用 requestAnimationFrame 确保DOM渲染完毕后再触发默认选择
+            if (initialSelect.songType) {
+                requestAnimationFrame(async () => {
+                    await selectDifficulty(initialSelect.songType, initialSelect.chartIndex, targetElement);
+                });
+            }
+
+            // 阶段5: 保存到历史记录
+            if (!isSearchResult && targetElement === resultDisplay) {
+                saveToHistory(dataArray, scoresData);
+            }
+        }
+
+        function displayError(errorMsg, details, targetElement = resultDisplay) {
+            if (targetElement === resultDisplay) {
+                loader.style.display = 'none';
+            } else if (targetElement === homeResultDisplay) {
+                homeLoader.style.display = 'none';
+            }
+            
             let detailsHtml = '';
-            if (details) {
+            if (errorMsg.includes("未能识别到歌曲名")) {
+                detailsHtml = `<p style="margin-top: 10px;"><small>这可能是由于拍摄角度不佳、画面模糊或反光导致的。请您调整后重试。</small></p>`;
+            } else if (details) {
                 detailsHtml = `<p><small>详情: ${details}</small></p>`;
             }
-            resultDiv.innerHTML = `
-                <p class="error">${errorMsg}</p>
-                ${detailsHtml}
+            targetElement.innerHTML = `
+                <div class="scan-container" style="padding-top: 20px; padding-bottom: 20px;">
+                    <p class="error">${errorMsg}</p>
+                    ${detailsHtml}
+                </div>
             `;
         }
+
+        // --- **新增**: 历史记录功能 ---
+        function getHistory() {
+            return JSON.parse(localStorage.getItem('maimaiScanHistory') || '[]');
+        }
+
+        function saveHistory(history) {
+            localStorage.setItem('maimaiScanHistory', JSON.stringify(history));
+        }
+
+        function saveToHistory(dataArray, scoreData = null) {
+            const history = getHistory();
+            // **终极缓存架构**: 历史记录只保存歌曲ID和成绩，不再重复存储歌曲数据
+            const songId = dataArray[0].id;
+            const newEntry = {
+                timestamp: Date.now(),
+                songId: songId, // 只存ID
+                score: scoreData 
+            };
+            history.unshift(newEntry);
+            saveHistory(history);
+            renderHistoryPage();
+        }
+
+        function renderHistoryPage() {
+            const history = getHistory();
+            historyList.innerHTML = '';
+
+            if (history.length === 0) {
+                historyList.innerHTML = '<p style="text-align: center; color: var(--text-light);">暂无历史记录</p>';
+                clearHistoryBtn.style.display = 'none';
+                return;
+            }
+
+            clearHistoryBtn.style.display = 'block';
+            const songDb = getSongDatabase(); // **终极缓存架构**: 获取一次数据库，避免在循环中重复读取
+
+            history.forEach(entry => {
+                const li = document.createElement('li');
+                li.className = 'history-item';
+                
+                // **终极缓存架构**: 从数据库中获取歌曲信息来渲染列表项
+                const songDataArray = songDb[entry.songId];
+                const coverUrl = songDataArray && songDataArray[0] ? songDataArray[0].cover_url : '';
+                const title = songDataArray && songDataArray[0] ? songDataArray[0].basic_info.title : `未知歌曲 (ID: ${entry.songId})`;
+
+                li.innerHTML = `
+                    <img src="${coverUrl}" class="history-item-cover" alt="封面" onerror="this.onerror=null;this.src='/image/404/404.png';">
+                    <div class="history-item-info">
+                        <div class="title">${title}</div>
+                        <div class="time">${new Date(entry.timestamp).toLocaleString()}</div>
+                    </div>
+                    <div class="history-item-actions">
+                        <button onclick="showHistoryDetail(${entry.timestamp})">详情</button>
+                        <button class="delete-btn" onclick="deleteHistoryItem(${entry.timestamp})">删除</button>
+                    </div>
+                `;
+                historyList.appendChild(li);
+            });
+        }
+
+        async function showHistoryDetail(timestamp) {
+            const history = getHistory();
+            const entry = history.find(item => item.timestamp === timestamp);
+            if (entry) {
+                // **终极缓存架构**: 从本地数据库中通过ID检索歌曲数据
+                const songDataArray = getSongFromDatabase(entry.songId);
+                if (songDataArray) {
+                    historyModal.style.display = 'block';
+                    // 从历史记录中读取成绩快照 (entry.score) 并传递给displayResult
+                    await displayResult(songDataArray, modalResultDisplay, false, entry.score);
+                } else {
+                    // 这是一个异常情况，理论上不应发生
+                    alert(`错误：在本地数据库中找不到歌曲ID ${entry.songId}。数据可能已损坏。`);
+                }
+            }
+        }
+
+        function deleteHistoryItem(timestamp) {
+            if (!confirm('确定要删除这条记录吗？')) return;
+            let history = getHistory();
+            history = history.filter(item => item.timestamp !== timestamp);
+            saveHistory(history);
+            renderHistoryPage();
+        }
+
+        clearHistoryBtn.addEventListener('click', () => {
+            if (!confirm('确定要清空所有历史记录吗？此操作不可恢复。')) return;
+            saveHistory([]);
+            renderHistoryPage();
+        });
+
+        // --- **新增**: 弹窗关闭逻辑 ---
+        closeModalBtn.addEventListener('click', () => {
+            historyModal.style.display = 'none';
+        });
+
+        window.addEventListener('click', (event) => {
+            if (event.target == historyModal) {
+                historyModal.style.display = 'none';
+            }
+            if (event.target == b50Modal) {
+                b50Modal.style.display = 'none';
+            }
+            if (event.target == favoritesModal) {
+                favoritesModal.style.display = 'none';
+            }
+            // **留言板改造**: 点击外部关闭反馈弹窗
+            if (event.target == feedbackModal) {
+                feedbackModal.style.display = 'none';
+            }
+            // **终极交互升级**: 点击弹窗外部也可关闭
+            if (event.target == customAlertModal) {
+                customAlertCloseBtn.click();
+            }
+        });
+
+        // --- **终极交互升级**: 自定义弹窗核心函数 ---
+        function showCustomAlert(message, callback) {
+            customAlertMessage.textContent = message;
+            customAlertCallback = callback;
+            customAlertModal.style.display = 'block';
+        }
+
+        // --- **终极健壮性**: 全局认证错误处理 ---
+        function handleUnauthorized() {
+            localStorage.removeItem('session_token');
+            localStorage.removeItem('maimaiUserProfile');
+            document.getElementById('home-rating-display').style.display = 'none';
+            document.getElementById('profile-container').innerHTML = '';
+            showCustomAlert('会话已过期或无效，请重新登录。', () => {
+                loginModal.style.display = 'block';
+            });
+        }
+
+        async function fetchWithAuth(url, options = {}) {
+            const token = localStorage.getItem('session_token');
+            if (!token) {
+                handleUnauthorized();
+                throw new Error('No session token found.');
+            }
+
+            const headers = {
+                ...options.headers,
+                'x-access-token': token
+            };
+
+            const response = await fetch(url, { ...options, headers });
+
+            if (response.status === 401 || response.status === 403) {
+                handleUnauthorized();
+                throw new Error('Unauthorized');
+            }
+
+            return response;
+        }
+
+        customAlertCloseBtn.addEventListener('click', () => {
+            customAlertModal.style.display = 'none';
+            if (typeof customAlertCallback === 'function') {
+                customAlertCallback();
+            }
+        });
+
+        b50CloseBtn.addEventListener('click', () => {
+            b50Modal.style.display = 'none';
+        });
+
+        favoritesCloseBtn.addEventListener('click', () => {
+            favoritesModal.style.display = 'none';
+        });
+
+        favoritesButtonHome.addEventListener('click', (event) => {
+            event.stopPropagation();
+            renderFavorites();
+            favoritesModal.style.display = 'block';
+        });
+
+        // **留言板改造**: 新增事件监听
+        feedbackButtonHome.addEventListener('click', () => {
+            feedbackModal.style.display = 'block';
+        });
+
+        feedbackCloseBtn.addEventListener('click', () => {
+            feedbackModal.style.display = 'none';
+        });
+
+        feedbackForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-feedback-btn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '提交中...';
+
+            const type = document.getElementById('feedback-type').value;
+            const content = document.getElementById('feedback-content').value;
+            const contact = document.getElementById('feedback-contact').value;
+
+            if (!content.trim()) {
+                showCustomAlert('反馈内容不能为空！');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提交反馈';
+                return;
+            }
+
+            try {
+                const response = await fetchWithAuth('/api/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type, content, contact })
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    showCustomAlert(result.message || '提交成功！', () => {
+                        feedbackForm.reset();
+                        feedbackModal.style.display = 'none';
+                    });
+                } else {
+                    showCustomAlert(result.error || '提交失败，请稍后重试。');
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    showCustomAlert('网络错误，无法提交反馈。');
+                }
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提交反馈';
+            }
+        });
+
+        function renderFavorites() {
+            const favorites = getFavorites();
+            favoritesListContainer.innerHTML = '';
+
+            if (favorites.length === 0) {
+                favoritesListContainer.innerHTML = '<p style="text-align: center; color: var(--text-light);">还没有收藏任何歌曲哦</p>';
+                return;
+            }
+
+            const songDb = getSongDatabase();
+            const list = document.createElement('ul');
+            list.id = 'history-list'; // Re-use history list styling
+            list.style.maxHeight = '60vh';
+            list.style.overflowY = 'auto';
+
+            favorites.forEach(songId => {
+                const songDataArray = songDb[songId];
+                if (songDataArray) {
+                    const li = document.createElement('li');
+                    li.className = 'history-item';
+                    const coverUrl = songDataArray[0].cover_url;
+                    const title = songDataArray[0].basic_info.title;
+
+                    li.innerHTML = `
+                        <img src="${coverUrl}" class="history-item-cover" alt="封面" onerror="this.onerror=null;this.src='/image/404/404.png';">
+                        <div class="history-item-info">
+                            <div class="title">${title}</div>
+                            <div class="time">ID: ${songId}</div>
+                        </div>
+                        <div class="history-item-actions">
+                            <button onclick="showFavoriteDetail('${songId}')">详情</button>
+                        </div>
+                    `;
+                    list.appendChild(li);
+                }
+            });
+            favoritesListContainer.appendChild(list);
+        }
+
+        async function showFavoriteDetail(songId) {
+            const songDataArray = getSongFromDatabase(songId);
+            if (songDataArray) {
+                favoritesModal.style.display = 'none'; // Close favorites modal
+                historyModal.style.display = 'block'; // Open details modal
+                await displayResult(songDataArray, modalResultDisplay, true, null);
+            }
+        }
+
+        // --- **终极交互升级**: B50项目点击处理 (V2: 增加云端回源) ---
+        async function handleB50ItemClick(event) {
+            const item = event.target.closest('.b50-item');
+            if (!item) return;
+
+            const songId = item.dataset.songId;
+            if (!songId) return;
+
+            // 1. 优先从本地数据库获取歌曲数据
+            let songDataArray = getSongFromDatabase(songId);
+
+            if (songDataArray) {
+                // 本地命中，直接显示
+                console.log(`[B50 缓存命中] 从本地数据库加载歌曲ID: ${songId}`);
+                b50Modal.style.display = 'none';
+                historyModal.style.display = 'block';
+                await displayResult(songDataArray, modalResultDisplay, false, null);
+            } else {
+                // 本地未命中，从服务器回源获取
+                console.log(`[B50 缓存未命中] 从服务器拉取歌曲ID: ${songId}`);
+                // **终极健壮性**: 在B50弹窗内显示加载动画
+                b50Loader.style.display = 'block';
+                
+                try {
+                    const response = await fetch('/search', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: songId }),
+                    });
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        // 成功获取数据后，关闭B50，打开详情
+                        b50Modal.style.display = 'none';
+                        historyModal.style.display = 'block';
+                        await displayResult(result, modalResultDisplay, false, null);
+                    } else {
+                        showCustomAlert(result.error || `服务器错误：无法找到ID为 ${songId} 的歌曲。`);
+                    }
+                } catch (error) {
+                    showCustomAlert('网络错误，无法连接到服务器。');
+                } finally {
+                    // 无论成功与否，隐藏加载动画
+                    b50Loader.style.display = 'none';
+                }
+            }
+        }
+
+        b15Grid.addEventListener('click', handleB50ItemClick);
+        b35Grid.addEventListener('click', handleB50ItemClick);
+
+        b50Button.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            b15Grid.innerHTML = '';
+            b35Grid.innerHTML = '';
+            b50Container.style.display = 'none';
+            b50Loader.style.display = 'block';
+            b50Modal.style.display = 'block';
+
+            try {
+                const response = await fetchWithAuth('/api/b50');
+                const data = await response.json();
+
+                if (response.ok) {
+                    // **终极B50逻辑重构**: 渲染函数
+                    const renderGrid = (records, rankStart) => {
+                        let rank = rankStart;
+                        // **终极色彩调和**: 重新定义颜色数组，并应用完整的边框样式
+                        const difficultyColors = ['#2dbd64', '#f9a825', '#f44336', '#6a1b9a', '#e1bee7'];
+                        return records.map(song => {
+                            const borderColor = difficultyColors[song.level_index] || 'transparent';
+                            // **终极形态修正**: 将样式强制应用到完整的 `border-color`
+                            const styleAttribute = `border-color: ${borderColor} !important;`;
+
+                            // **终极形态锁定**: 移除DX分数
+                            return `
+                                <div class="b50-item" style="${styleAttribute}" data-song-id="${song.song_id}">
+                                    <div class="b50-item-inner">
+                                        <img src="${song.cover_url}" alt="${song.title}" onerror="this.onerror=null;this.src='/image/404/404.png';">
+                                        <div class="title">${song.title}</div>
+                                        <div class="achievements"><strong>${(song.achievements || 0).toFixed(4)}%</strong></div>
+                                        <div class="stats">${song.ds || 'N/A'} -> ${song.ra || 'N/A'}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    };
+
+                    b15Grid.innerHTML = renderGrid(data.b15 || [], 1);
+                    b35Grid.innerHTML = renderGrid(data.b35 || [], 1);
+                    b50Container.style.display = 'block';
+
+                } else {
+                    showCustomAlert(`查询B50失败: ${data.error || '未知错误'}`);
+                    b50Modal.style.display = 'none';
+                }
+            } catch (error) {
+                // fetchWithAuth 会处理401/403，这里只捕获其他网络错误
+                if (error.message !== 'Unauthorized') {
+                    showCustomAlert('查询B50时发生网络错误。');
+                }
+                b50Modal.style.display = 'none';
+            } finally {
+                b50Loader.style.display = 'none';
+            }
+        });
+
+        // --- **新增**: 认证与资料功能 ---
+        function checkLogin() {
+            const token = localStorage.getItem('session_token');
+            if (!token) {
+                loginModal.style.display = 'block';
+            } else {
+                loginModal.style.display = 'none';
+            }
+        }
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = usernameInput.value;
+            const password = passwordInput.value;
+            loginError.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('session_token', data.session_token);
+                    loginModal.style.display = 'none';
+                    // **终极交互升级**: 使用自定义弹窗并设置回调
+                    showCustomAlert('登录成功！', () => {
+                        location.reload();
+                    });
+                } else {
+                    loginError.textContent = data.error || '登录失败';
+                    loginError.style.display = 'block';
+                }
+            } catch (error) {
+                loginError.textContent = '网络错误，请稍后重试。';
+                loginError.style.display = 'block';
+            }
+        });
+
+
+        const REFRESH_COOLDOWN = 60000; // 60秒冷却时间
+
+        function startCooldown(button, seconds) {
+            button.disabled = true;
+            let secondsLeft = seconds;
+            button.textContent = `请稍候 (${secondsLeft}s)`;
+            
+            const interval = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft > 0) {
+                    button.textContent = `请稍候 (${secondsLeft}s)`;
+                } else {
+                    clearInterval(interval);
+                    button.disabled = false;
+                    button.textContent = '更新数据';
+                }
+            }, 1000);
+        }
+
+        refreshProfileBtn.addEventListener('click', async () => {
+            const lastRefresh = parseInt(localStorage.getItem('lastProfileRefreshTime') || '0');
+            const now = Date.now();
+
+            if (now - lastRefresh < REFRESH_COOLDOWN) {
+                const secondsLeft = Math.ceil((REFRESH_COOLDOWN - (now - lastRefresh)) / 1000);
+                showCustomAlert(`操作过于频繁，请在 ${secondsLeft} 秒后重试。`);
+                return;
+            }
+
+            refreshProfileBtn.disabled = true;
+            refreshProfileBtn.textContent = '更新中...';
+
+            try {
+                const response = await fetchWithAuth('/api/profile/refresh', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('maimaiUserProfile', JSON.stringify(data));
+                    renderProfile(data);
+                    localStorage.setItem('lastProfileRefreshTime', Date.now().toString());
+                    showCustomAlert('个人资料已从服务器成功更新！');
+                    startCooldown(refreshProfileBtn, REFRESH_COOLDOWN / 1000);
+                } else {
+                    showCustomAlert(`更新失败: ${data.error || '未知错误'}`);
+                    refreshProfileBtn.disabled = false;
+                    refreshProfileBtn.textContent = '更新数据';
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    showCustomAlert('网络错误，无法更新数据。');
+                }
+                refreshProfileBtn.disabled = false;
+                refreshProfileBtn.textContent = '更新数据';
+            }
+        });
+
+        logoutButton.addEventListener('click', async () => {
+            if (!localStorage.getItem('session_token')) return;
+
+            try {
+                await fetchWithAuth('/api/logout', {
+                    method: 'POST'
+                });
+            } catch (error) {
+                console.error("登出时发生错误:", error.message);
+            } finally {
+                // handleUnauthorized 已经被调用，这里只需提示用户
+                showCustomAlert('您已安全登出。', () => {
+                    checkLogin();
+                });
+            }
+        });
+
+        // **终极修复**: 重新定义全局可用的 getRatingText 函数
+        function getRatingText(rating) {
+            const r = parseInt(rating, 10);
+            if (r === 0) return "初学者";
+            if (r >= 1 && r <= 10) {
+                const levels = ["初段", "二段", "三段", "四段", "五段", "六段", "七段", "八段", "九段", "十段"];
+                return levels[r - 1];
+            }
+            if (r >= 11 && r <= 20) {
+                const levels = ["真初段", "真二段", "真三段", "真四段", "真五段", "真六段", "真七段", "真八段", "真九段", "真十段"];
+                return levels[r - 11];
+            }
+            if (r === 21) return "真皆传";
+            if (r === 22) return "里皆传";
+            return "未知段位";
+        }
+
+        // **终极视觉升级**: 注入动态渐变高级感
+        function getRatingColor(rating) {
+            const r = parseInt(rating, 10);
+            if (r >= 15000) return 'linear-gradient(135deg, #ff66ff, #ffc371, #ffff7e, #80ff80, #7fffff, #8080ff, #ff66ff)';
+            if (r >= 14500) return 'linear-gradient(135deg, #fff59d, #fdd835, #ffb300)'; // 尊爵金
+            if (r >= 14000) return 'linear-gradient(135deg, #ffca28, #ffb300)'; // 琥珀金
+            if (r >= 13000) return 'linear-gradient(135deg, #f5f5f5, #bdbdbd)'; // 流光银
+            if (r >= 12000) return 'linear-gradient(135deg, #d7ccc8, #a1887f)'; // 青铜
+            if (r >= 10000) return '#ab47bc'; // 紫色 (保持单色以示区别)
+            if (r >= 7000) return '#ef5350';  // 红色
+            if (r >= 4000) return '#ffee58';  // 黄色
+            if (r >= 2000) return '#9ccc65';  // 绿色
+            if (r >= 1000) return '#42a5f5';  // 蓝色
+            return '#eeeeee'; // 默认
+        }
+
+        // **宇宙终极修正**: 动态设置按钮高度的函数
+        function setFavoriteButtonHeight() {
+            const ratingCard = document.getElementById('home-rating-display');
+            const favoriteButton = document.getElementById('favorites-button-home');
+            const feedbackButton = document.getElementById('feedback-button-home');
+            
+            if (ratingCard && favoriteButton && feedbackButton && ratingCard.offsetHeight > 0) {
+                const height = ratingCard.offsetHeight;
+                // **V6修正**: 直接将Rating卡片的高度赋给两个按钮
+                favoriteButton.style.height = `${height}px`;
+                feedbackButton.style.height = `${height}px`;
+                console.log(`[动态等高 V2] Rating卡片高度: ${height}px, 已应用到两个按钮。`);
+            }
+        }
+
+        // **终极性能优化**: 渲染个人资料的独立函数
+        function renderProfile(data) {
+            const profileContainer = document.getElementById('profile-container');
+            const homeRatingDisplay = document.getElementById('home-rating-display');
+
+            // 1. 更新主页Rating组件
+            const ratingColor = getRatingColor(data.rating);
+            homeRatingDisplay.querySelector('.value').textContent = data.rating;
+            let finalStyle = '';
+            let textColor = 'white';
+            if (['#eeeeee', '#ffee58', '#fdd835', 'linear-gradient(135deg, #f5f5f5, #bdbdbd)', 'linear-gradient(135deg, #d7ccc8, #a1887f)'].includes(ratingColor) || ratingColor.includes('ffff7e')) {
+                textColor = '#000000';
+            }
+            if (ratingColor.startsWith('linear-gradient')) {
+                finalStyle = `background: ${ratingColor} !important; color: ${textColor} !important; display: block !important;`;
+            } else {
+                finalStyle = `background-color: ${ratingColor} !important; background-image: none !important; color: ${textColor} !important; display: block !important;`;
+            }
+            homeRatingDisplay.setAttribute('style', finalStyle);
+
+            // **宇宙终极修正**: 在Rating卡片渲染后，调用动态等高函数
+            requestAnimationFrame(setFavoriteButtonHeight);
+
+            // 2. 更新“我的”页面
+            const ratingText = getRatingText(data.additional_rating);
+            profileContainer.innerHTML = `
+                <table class="result-table">
+                    <tr><td>Rating</td><td>${data.rating}</td></tr>
+                    <tr><td>用户名</td><td>${data.username}</td></tr>
+                    <tr><td>QQ</td><td>${data.bind_qq || '未绑定'}</td></tr>
+                    <tr><td>段位</td><td>${ratingText} (${data.additional_rating})</td></tr>
+                    <tr><td>牌子</td><td>${data.plate || '未设置'}</td></tr>
+                </table>
+            `;
+        }
+
+        async function loadProfileData() {
+            const token = localStorage.getItem('session_token');
+            const profileContainer = document.getElementById('profile-container');
+            const homeRatingDisplay = document.getElementById('home-rating-display');
+            const cachedProfile = JSON.parse(localStorage.getItem('maimaiUserProfile'));
+
+            if (!token) {
+                profileContainer.innerHTML = '<p class="error">请先登录。</p>';
+                homeRatingDisplay.style.display = 'none';
+                checkLogin();
+                return;
+            }
+
+            // **核心缓存逻辑**: 如果有缓存，直接使用
+            if (cachedProfile) {
+                console.log("[缓存命中] 从本地加载个人资料。");
+                renderProfile(cachedProfile);
+                return;
+            }
+
+            // 如果没有缓存，则从服务器获取一次（不会触发DF刷新）
+            profileContainer.innerHTML = '<p>正在加载...</p>';
+
+            try {
+                const response = await fetchWithAuth('/api/profile');
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('maimaiUserProfile', JSON.stringify(data));
+                    renderProfile(data);
+                } else {
+                    // 401/403错误已被全局处理，这里处理其他可能的服务器错误
+                    profileContainer.innerHTML = `<p class="error">加载失败: ${data.error || `服务器错误 (状态: ${response.status})`}</p>`;
+                    homeRatingDisplay.style.display = 'none';
+                }
+            } catch (error) {
+                if (error.message !== 'Unauthorized') {
+                    console.error("网络错误:", error);
+                    profileContainer.innerHTML = `<p class="error">网络错误，无法加载个人资料。</p>`;
+                    homeRatingDisplay.style.display = 'none';
+                }
+            }
+        }
+
     </script>
 </body>
 </html>

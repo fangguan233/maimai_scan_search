@@ -1,0 +1,10 @@
+Flask
+requests
+PyJWT
+cryptography
+ultralytics
+paddleocr
+fuzzywuzzy
+python-Levenshtein
+waitress
+psutil

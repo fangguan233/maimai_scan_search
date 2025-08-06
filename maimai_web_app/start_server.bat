@@ -1,24 +1,36 @@
 @echo off
-echo Starting the Maimai Song-Scanner server...
+chcp 65001 > nul
+echo.
+echo ==================================================
+echo      Maimai DX Score Analyzer - Server Launcher
+echo ==================================================
+echo.
+echo Activating Conda environment 'newyolo'...
+call conda activate newyolo
 
-REM --- Conda 环境激活 ---
-echo Activating Conda environment 'yolov8'...
-CALL conda activate yolov8
-
-REM 检查 Conda 环境是否激活成功
-IF %CONDA_DEFAULT_ENV% NEQ yolov8 (
-    echo Failed to activate Conda environment 'yolov8'.
-    echo Please make sure Conda is installed and the 'yolov8' environment exists.
+REM Check if conda activation was successful
+IF %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo ERROR: Failed to activate Conda environment 'newyolo'.
+    echo Please make sure Conda is installed and the 'newyolo' environment exists.
+    echo.
     pause
     exit /b
 )
 
+echo.
 echo Conda environment activated successfully.
+echo Launching server with Waitress...
+echo.
+echo  - Local access: http://localhost:5000
+echo  - Network access: http://[Your-IP-Address]:5000
+echo.
+echo Server is running. Do not close this window.
+echo Press Ctrl+C to stop the server.
+echo.
 
-REM --- 启动 Flask 服务器 ---
-echo Starting Flask server...
-REM 使用 python  来禁用输出缓冲，这样可以实时看到日志
-python -u app.py
+waitress-serve --host=0.0.0.0 --port=5000 app:app
 
-echo Server has been shut down.
-pause
+echo.
+echo Server has been stopped. Press any key to exit...
+pause > nul
