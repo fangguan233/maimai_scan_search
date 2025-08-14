@@ -58,7 +58,17 @@ def decrypt_password(encrypted_password):
 # --- **留言板改造**: 新增文件锁 ---
 feedback_lock = threading.Lock()
 
-# --- 2. 在应用启动时加载所有模型 (只运行一次) ---
+# --- 2. 在应用启动时加载所有模型和数据 (只运行一次) ---
+
+# --- **别名搜索**: 加载别名数据 ---
+aliases_data = {}
+try:
+    aliases_json_path = os.path.join(app.root_path, 'aliases.json')
+    with open(aliases_json_path, 'r', encoding='utf-8') as f:
+        aliases_data = json.load(f)
+    print("别名数据加载成功！")
+except Exception as e:
+    print(f"警告: 加载别名数据失败: {e}")
 
 # --- **诊断**: 打印关键路径，以帮助调试文件保留问题 ---
 MONITORING_FLAG_PATH_DIAG = os.path.abspath(os.path.join(os.path.dirname(__file__), 'monitoring.flag'))
@@ -135,6 +145,33 @@ def find_best_match(ocr_text, songs_data):
         matched_title = best_match[0]
         all_versions = [song for song in songs_data if song['title'] == matched_title]
         # **终极改造**: 为每个版本添加封面URL
+        for version in all_versions:
+            version['cover_url'] = f"/cover/{version['id']}"
+        return all_versions
+        
+    return None
+
+def find_song_by_alias(query, aliases_data, songs_data):
+    """通过别名查找歌曲"""
+    # 将查询转换为小写以进行不区分大小写的比较
+    lower_query = query.lower()
+    
+    # **修复**: 迭代 'content' 列表，而不是整个字典
+    for details in aliases_data.get('content', []):
+        # 检查官方标题
+        if lower_query == details.get("Name", "").lower():
+            matched_title = details["Name"]
+            break
+        # 检查别名列表
+        if any(lower_query == alias.lower() for alias in details.get("Alias", [])):
+            matched_title = details["Name"]
+            break
+    else: # 如果循环正常结束（没有break）
+        return None
+
+    # 如果找到了匹配的标题，就在songs_data中查找
+    all_versions = [song for song in songs_data if song['title'] == matched_title]
+    if all_versions:
         for version in all_versions:
             version['cover_url'] = f"/cover/{version['id']}"
         return all_versions
@@ -662,11 +699,35 @@ def search_song():
             return jsonify({'error': f'本地数据库中未找到ID为 {query} 的歌曲'}), 404
     else:
         # --- 文本模糊搜索路径 ---
+        # **别名搜索**: 首先尝试通过别名精确查找
+        found_by_alias = find_song_by_alias(query, aliases_data, songs_data)
+        if found_by_alias:
+            return jsonify(found_by_alias)
+
+        # 如果别名未找到，再进行模糊匹配
         found_songs = find_best_match(query, songs_data)
         if found_songs:
             return jsonify(found_songs)
         else:
             return jsonify({'error': '未找到匹配的歌曲'}), 404
+
+@app.route('/api/aliases/<song_id>', methods=['GET'])
+def get_aliases(song_id):
+    """根据歌曲ID查找并返回所有别名"""
+    try:
+        # 在别名数据中查找匹配的SongID
+        for details in aliases_data.get('content', []):
+            # **健壮性修复**: 确保比较的是相同类型
+            if str(details.get("SongID")) == str(song_id):
+                return jsonify(details.get("Alias", []))
+        
+        # 如果循环结束都没有找到
+        return jsonify([]) # 返回一个空列表表示没有别名
+
+    except Exception as e:
+        print(f"获取别名时出错: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "服务器内部错误"}), 500
 
 
 @app.route('/upload', methods=['POST'])

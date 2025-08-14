@@ -19,7 +19,7 @@ MAIN_APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 LOG_ARCHIVE_PATH = os.path.join(MAIN_APP_ROOT, 'logs')
 UPLOADS_PATH = os.path.join(MAIN_APP_ROOT, 'uploads')
 RUNS_PATH = os.path.join(MAIN_APP_ROOT, 'runs', 'detect')
-START_SCRIPT_PATH = os.path.join(MAIN_APP_ROOT, 'start_server.bat')
+# START_SCRIPT_PATH is now determined dynamically based on OS
 
 app = Flask(__name__)
 
@@ -57,21 +57,29 @@ def _start_app_internal():
         log_filename = f"app-{timestamp}.log"
         current_log_file = os.path.join(LOG_ARCHIVE_PATH, log_filename)
 
-        # **终极进程管理**: 在Windows上，使用作业对象确保子进程随父进程退出
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        command = []
+        creationflags = 0
+        shell = False
+
         if os.name == 'nt':
+            script_path = os.path.join(MAIN_APP_ROOT, 'start_server.bat')
+            command = [script_path]
+            shell = True # .bat files often require shell=True
             # 启动时挂起，以便我们能将其加入作业
-            creationflags |= CREATE_SUSPENDED # **健壮性修复**: 使用我们自己定义的常量
+            creationflags = subprocess.CREATE_NO_WINDOW | CREATE_SUSPENDED
+        else: # Linux or macOS
+            script_path = os.path.join(MAIN_APP_ROOT, 'start_server.sh')
+            command = ['sh', script_path] # Explicitly use sh to run the script
             
         main_app_process = subprocess.Popen(
-            [START_SCRIPT_PATH],
+            command,
             cwd=MAIN_APP_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             encoding='utf-8',
             errors='replace',
-            shell=True,
+            shell=shell,
             creationflags=creationflags,
             bufsize=1
         )
@@ -165,7 +173,11 @@ def stop_app():
         # 标记为不应该运行，这样守护线程就不会重启它
         app_should_be_running = False
         
-        subprocess.run(f"taskkill /F /PID {main_app_process.pid} /T", check=True, shell=True, capture_output=True)
+        # 使用 psutil 进行跨平台进程树终止
+        parent = psutil.Process(main_app_process.pid)
+        for child in parent.children(recursive=True):
+            child.kill()
+        parent.kill()
         
         if log_thread and log_thread.is_alive():
             log_thread.join(timeout=2)
@@ -174,6 +186,11 @@ def stop_app():
         log_thread = None
         
         return jsonify({"status": "success", "message": "主应用已手动停止。"})
+    except psutil.NoSuchProcess:
+        # 进程已经不存在了，也算成功
+        main_app_process = None
+        log_thread = None
+        return jsonify({"status": "success", "message": "主应用进程已消失，状态已重置。"})
     except Exception as e:
         # 如果停止失败，恢复标记，因为应用可能还在运行
         app_should_be_running = True

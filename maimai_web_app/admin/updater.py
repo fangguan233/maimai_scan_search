@@ -10,17 +10,55 @@ MAIN_APP_ROOT = os.path.abspath(os.path.join(ADMIN_DIR, '..'))
 # 定义需要操作的文件的绝对路径
 SONGS_JSON_PATH = os.path.join(MAIN_APP_ROOT, 'songs.json')
 ETAG_FILE_PATH = os.path.join(MAIN_APP_ROOT, 'songs.etag')
+ALIASES_JSON_PATH = os.path.join(MAIN_APP_ROOT, 'aliases.json') # **新增**: 别名文件路径
 MUSIC_DATA_URL = "https://www.diving-fish.com/api/maimaidxprober/music_data"
+ALIASES_DATA_URL = "https://www.yuzuchan.moe/api/maimaidx/maimaidxalias" # **新增**: 别名数据URL
 
-def check_and_update_songs():
+def update_aliases():
     """
-    检查并更新本地的 songs.json 文件。
-    使用 ETag 缓存机制来避免不必要的下载。
+    下载并更新本地的 aliases.json 文件。
+    这个函数不使用ETag，直接覆盖。
     
     返回:
         一个包含 'status' 和 'message' 键的字典。
     """
-    # 1. 读取本地保存的 ETag（如果存在）
+    print("正在尝试更新歌曲别名数据...")
+    try:
+        response = requests.get(ALIASES_DATA_URL, timeout=20)
+        if response.status_code == 200:
+            # **健壮性修复**: 确保响应是JSON
+            new_data = response.json()
+            with open(ALIASES_JSON_PATH, 'w', encoding='utf-8') as f:
+                json.dump(new_data, f, ensure_ascii=False, indent=2) # 使用indent增加可读性
+            print("歌曲别名数据更新成功。")
+            return {"status": "success", "message": "歌曲别名数据更新成功。"}
+        else:
+            message = f"更新别名失败，服务器返回状态码: {response.status_code}"
+            print(message)
+            return {"status": "error", "message": message}
+    except requests.exceptions.RequestException as e:
+        message = f"更新别名时发生网络错误: {e}"
+        print(message)
+        return {"status": "error", "message": message}
+    except json.JSONDecodeError:
+        message = "无法解析别名数据，响应可能不是有效的JSON。"
+        print(message)
+        return {"status": "error", "message": message}
+    except Exception as e:
+        message = f"更新别名时发生未知错误: {e}"
+        print(message)
+        return {"status": "error", "message": message}
+
+def check_and_update_songs():
+    """
+    **V3重构**: 检查并更新本地的 songs.json 和 aliases.json 文件。
+    确保两种文件的更新过程相对独立，一个失败不影响另一个。
+    """
+    # --- Part 1: 更新 songs.json ---
+    songs_status = "unknown"
+    songs_message = ""
+    
+    # 1a. 读取ETag
     current_etag = None
     if os.path.exists(ETAG_FILE_PATH):
         try:
@@ -28,72 +66,52 @@ def check_and_update_songs():
                 current_etag = f.read().strip()
         except Exception as e:
             print(f"读取 ETag 文件失败: {e}")
-            # 如果读取失败，当作没有 ETag 处理
 
-    # 2. 构造请求头
-    headers = {
-        'Accept': 'application/json'
-    }
+    # 1b. 构造请求头
+    headers = {'Accept': 'application/json'}
     if current_etag:
-        # ETag 格式本身包含双引号，直接使用即可
         headers['If-None-Match'] = current_etag
     
     print(f"正在检查歌曲数据更新... 使用 ETag: {current_etag}")
 
+    # 1c. 发送请求并处理
     try:
-        # 3. 发送 GET 请求到 Diving-Fish API
-        response = requests.get(MUSIC_DATA_URL, headers=headers, timeout=30) # 30秒超时
-
-        # 4. 根据响应状态码处理
+        response = requests.get(MUSIC_DATA_URL, headers=headers, timeout=30)
         if response.status_code == 200:
-            # --- 数据已更新 ---
-            print("检测到新版本的歌曲数据，正在下载并更新...")
-            
-            # 获取新数据和新的 ETag
             new_data = response.json()
             new_etag = response.headers.get('ETag')
-
-            # 写入新的 JSON 数据到 songs.json
-            # 使用 ensure_ascii=False 来正确处理非 ASCII 字符
-            # 不使用 indent 来减小文件体积，提高加载效率
             with open(SONGS_JSON_PATH, 'w', encoding='utf-8') as f:
                 json.dump(new_data, f, ensure_ascii=False)
-
-            # 如果响应头中有新的 ETag，则保存它
             if new_etag:
                 with open(ETAG_FILE_PATH, 'w', encoding='utf-8') as f:
                     f.write(new_etag)
-                print(f"已保存新的 ETag: {new_etag}")
-            
-            return {"status": "success", "message": f"歌曲数据已成功更新！共加载 {len(new_data)} 首歌曲。"}
-
+            songs_message = f"歌曲数据已成功更新（共 {len(new_data)} 首）。"
+            songs_status = "success"
         elif response.status_code == 304:
-            # --- 数据未修改 ---
-            print("服务器确认本地歌曲数据已是最新版本。")
-            return {"status": "not_modified", "message": "本地歌曲数据已是最新版本，无需更新。"}
-        
+            songs_message = "歌曲数据已是最新。"
+            songs_status = "not_modified"
         else:
-            # --- 其他 HTTP 错误 ---
-            error_message = f"检查更新失败，服务器返回非预期的状态码: {response.status_code}"
-            print(error_message)
-            return {"status": "error", "message": error_message}
-
-    except requests.exceptions.Timeout:
-        error_message = "检查更新时网络连接超时，请稍后重试。"
-        print(error_message)
-        return {"status": "error", "message": error_message}
-    except requests.exceptions.RequestException as e:
-        error_message = f"检查更新时发生网络错误: {e}"
-        print(error_message)
-        return {"status": "error", "message": error_message}
-    except json.JSONDecodeError:
-        error_message = "无法解析从服务器返回的数据，响应可能不是有效的JSON格式。"
-        print(error_message)
-        return {"status": "error", "message": error_message}
+            songs_message = f"歌曲数据更新失败（服务器状态码: {response.status_code}）。"
+            songs_status = "error"
     except Exception as e:
-        error_message = f"更新过程中发生未知错误: {e}"
-        print(error_message)
-        return {"status": "error", "message": error_message}
+        songs_message = f"歌曲数据更新时发生错误: {e}"
+        songs_status = "error"
+    
+    print(songs_message)
+
+    # --- Part 2: 更新 aliases.json (总是执行) ---
+    aliases_result = update_aliases()
+    
+    # --- Part 3: 组合结果并返回 ---
+    final_message = f"{songs_message} {aliases_result['message']}"
+    
+    # 决定最终状态：任何一方失败都算失败
+    final_status = "error"
+    if songs_status in ["success", "not_modified"] and aliases_result['status'] == "success":
+        # 如果歌曲数据没变，但别名更新了，也算作成功
+        final_status = "success" if songs_status == "success" or aliases_result.get("refreshed") else "not_modified"
+
+    return {"status": final_status, "message": final_message}
 
 if __name__ == '__main__':
     # 用于直接运行此脚本进行测试
