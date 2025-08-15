@@ -663,7 +663,7 @@
             <!-- 主页 -->
             <div id="page-home" class="page">
                 <div class="search-bar">
-                    <input type="search" id="search-input" placeholder="输入歌曲名称或ID...">
+                    <input type="search" id="search-input" placeholder="可输入歌曲名或别名进行搜索">
                     <button id="search-button">搜索</button>
                 </div>
             <!-- **宇宙终极修正**: 采用JS动态等高方案 -->
@@ -748,6 +748,17 @@
             <div id="modal-result-display"></div>
         </div>
     </div>
+
+<!-- **新增**: 别名展示弹窗 -->
+<div id="aliases-modal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <h3 style="margin-top: 0;">歌曲别名</h3>
+        <div id="aliases-list-container" style="max-height: 60vh; overflow-y: auto;">
+            <!-- 别名将通过JS动态填充到这里 -->
+        </div>
+    </div>
+</div>
 
     <!-- **新增**: 登录弹窗 -->
     <div id="login-modal" class="modal" style="display: none;">
@@ -932,6 +943,10 @@
         const feedbackModal = document.getElementById('feedback-modal');
         const feedbackForm = document.getElementById('feedback-form');
         const feedbackCloseBtn = feedbackModal.querySelector('.close-btn');
+        // **别名功能**: 获取新元素
+        const aliasesModal = document.getElementById('aliases-modal');
+        const aliasesListContainer = document.getElementById('aliases-list-container');
+        const aliasesCloseBtn = aliasesModal.querySelector('.close-btn');
         // **终极交互升级**: 自定义弹窗元素
         const customAlertModal = document.getElementById('custom-alert-modal');
         const customAlertMessage = document.getElementById('custom-alert-message');
@@ -1477,11 +1492,29 @@
                     <div id="score-table-display"></div>
                     <div class="action-buttons" style="margin-top: 15px;">
                         <a href="https://search.bilibili.com/all?keyword=maimai%20${encodeURIComponent(commonInfo.title)}" target="_blank">跳转B站看谱</a>
-                        <button disabled>查看别名</button>
+                        <button id="view-aliases-btn" disabled>查看别名</button>
                     </div>
                 </div>
             `;
             targetElement.innerHTML = finalHtml;
+
+            // **别名功能**: 获取别名并更新按钮
+            const viewAliasesBtn = targetElement.querySelector('#view-aliases-btn');
+            if (viewAliasesBtn) {
+                // **终极别名匹配修复**: 将 "00008" 或 "10008" 这样的字符串ID转换为纯数字，以匹配aliases.json中的格式
+                const numericId = parseInt(firstSong.id, 10);
+                fetch(`/api/aliases/${numericId}`)
+                    .then(response => response.json())
+                    .then(aliases => { // 后端直接返回数组
+                        if (aliases && aliases.length > 0) {
+                            viewAliasesBtn.disabled = false;
+                            viewAliasesBtn.style.backgroundColor = 'var(--primary-color)';
+                            viewAliasesBtn.dataset.aliases = JSON.stringify(aliases);
+                        }
+                    })
+                    .catch(err => console.error('Failed to fetch aliases:', err));
+            }
+
 
             // **终极时序修复**: 使用事件委托处理难度按钮和收藏按钮点击
             const detailsContainer = targetElement.querySelector('.song-details-container');
@@ -1493,7 +1526,13 @@
                         toggleFavorite(target.dataset.songId, target);
                     } else {
                         const button = target.closest('button');
-                        if (button && button.parentElement.classList.contains('difficulty-selector')) {
+                        if (button && button.id === 'view-aliases-btn') {
+                            const aliases = JSON.parse(button.dataset.aliases || '[]');
+                            if (aliases.length > 0) {
+                                aliasesListContainer.innerHTML = `<ul>${aliases.map(alias => `<li>${alias}</li>`).join('')}</ul>`;
+                                aliasesModal.style.display = 'block';
+                            }
+                        } else if (button && button.parentElement.classList.contains('difficulty-selector')) {
                             const songType = button.dataset.songType;
                             const chartIndex = parseInt(button.dataset.chartIndex, 10);
                             selectDifficulty(songType, chartIndex, targetElement);
@@ -1646,6 +1685,10 @@
             if (event.target == feedbackModal) {
                 feedbackModal.style.display = 'none';
             }
+            // **别名功能**: 点击外部关闭别名弹窗
+            if (event.target == aliasesModal) {
+                aliasesModal.style.display = 'none';
+            }
             // **终极交互升级**: 点击弹窗外部也可关闭
             if (event.target == customAlertModal) {
                 customAlertCloseBtn.click();
@@ -1701,6 +1744,11 @@
 
         b50CloseBtn.addEventListener('click', () => {
             b50Modal.style.display = 'none';
+        });
+
+        // **别名功能**: 关闭按钮事件
+        aliasesCloseBtn.addEventListener('click', () => {
+            aliasesModal.style.display = 'none';
         });
 
         favoritesCloseBtn.addEventListener('click', () => {

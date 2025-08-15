@@ -136,15 +136,36 @@ def get_cover_len5_id(mid) -> str:
     return f"{mid:05d}"
 
 def find_best_match(ocr_text, songs_data):
-    """使用 fuzzywuzzy 查找最佳匹配的歌曲，并返回所有同名谱面"""
+    """使用 fuzzywuzzy 查找最佳匹配的歌曲，并根据特定逻辑处理ID 184"""
+    # 1. 预先找出歌曲184的标题
+    song_184_title = next((song['title'] for song in songs_data if song.get('id') == '00184'), None)
+
+    # 2. 获取所有唯一标题并进行模糊匹配，获取多个候选
     unique_titles = list(set(song['title'] for song in songs_data))
-    best_match = process.extractOne(ocr_text, unique_titles)
+    # **智能屏蔽改造**: 获取前2个匹配项以进行逻辑判断
+    matches = process.extract(ocr_text, unique_titles, limit=2)
     
-    # **算法调优**: 根据用户反馈，将匹配阈值调整为60，以在准确性和容错性之间取得平衡
-    if best_match and best_match[1] > 60:
-        matched_title = best_match[0]
-        all_versions = [song for song in songs_data if song['title'] == matched_title]
-        # **终极改造**: 为每个版本添加封面URL
+    # 3. 过滤出置信度高于60的匹配项
+    confident_matches = [m for m in matches if m[1] > 60]
+    
+    if not confident_matches:
+        return None
+
+    # 4. 应用新的智能屏蔽逻辑
+    best_match = confident_matches[0]
+    matched_title = best_match[0]
+
+    # 如果最佳匹配是歌曲184，并且存在另一个可信的匹配项
+    if song_184_title and matched_title == song_184_title and len(confident_matches) > 1:
+        # 则选择第二好的匹配项
+        second_best_match = confident_matches[1]
+        matched_title = second_best_match[0]
+        print(f"智能屏蔽已触发：识别到'{song_184_title}'，但自动选择第二匹配项'{matched_title}'。")
+    
+    # 5. 根据最终确定的标题查找所有版本
+    all_versions = [song for song in songs_data if song['title'] == matched_title]
+    
+    if all_versions:
         for version in all_versions:
             version['cover_url'] = f"/cover/{version['id']}"
         return all_versions
