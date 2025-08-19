@@ -8,3 +8,4 @@ fuzzywuzzy
 python-Levenshtein
 waitress
 psutil
+python-dotenv

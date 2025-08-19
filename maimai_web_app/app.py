@@ -14,6 +14,10 @@ import threading
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, send_from_directory, abort, g
 from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+
+# --- **ICP备案支持**: 加载环境变量 ---
+load_dotenv()
 
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
@@ -236,7 +240,9 @@ def favicon():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # **ICP备案支持**: 从环境变量中获取备案号并传递给模板
+    icp_record = os.getenv('ICP_RECORD')
+    return render_template('index.html', icp_record=icp_record)
 
 @app.route('/manifest.json')
 def serve_manifest():
