@@ -23,14 +23,22 @@ if [ $? -ne 0 ]; then
 fi
 echo ""
 echo "Conda environment activated successfully."
-echo "Launching server with Waitress..."
 echo ""
-echo " - Local access: http://localhost:5000"
-echo " - Network access: http://$(hostname -I | awk '{print $1}'):5000"
+echo "Loading environment variables from .env file..."
+# Load environment variables from .env file
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+# Set default port if not defined in .env
+APP_PORT=${APP_PORT:-25564}
+echo "Launching server with Waitress on port ${APP_PORT}..."
+echo ""
+echo " - Local access: http://localhost:${APP_PORT}"
+echo " - Network access: http://$(hostname -I | awk '{print $1}'):${APP_PORT}"
 echo ""
 echo "Server is running. Do not close this window."
 echo "Press Ctrl+C to stop the server."
 echo ""
-waitress-serve --host=0.0.0.0 --port=5000 app:app
+waitress-serve --host=0.0.0.0 --port=${APP_PORT} app:app
 echo ""
 echo "Server has been stopped."

@@ -21,7 +21,14 @@ fi
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 # Change to the project root directory
 cd "$SCRIPT_DIR/.."
-echo "Starting Waitress server for the admin panel in the background..."
+echo "Loading environment variables from .env file..."
+# Load environment variables from .env file
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+# Set default port if not defined in .env
+ADMIN_PORT=${ADMIN_PORT:-25565}
+echo "Starting Waitress server for the admin panel in the background on port ${ADMIN_PORT}..."
 # The log file will be in the same directory as the script
 LOG_FILE="$SCRIPT_DIR/admin.log"
 PID_FILE="$SCRIPT_DIR/admin.pid"
@@ -31,6 +38,6 @@ if [ -f "$PID_FILE" ] && ps -p $(cat "$PID_FILE") > /dev/null; then
     exit 1
 fi
 # Start the server with nohup, redirect output, run in background, and save PID
-nohup waitress-serve --host 0.0.0.0 --port 8081 admin.app:app > "$LOG_FILE" 2>&1 &
+nohup waitress-serve --host 0.0.0.0 --port=${ADMIN_PORT} admin.app:app > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 echo "Admin server started. Log file: $LOG_FILE, PID file: $PID_FILE"

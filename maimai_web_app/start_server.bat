@@ -20,16 +20,28 @@ IF %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo Conda environment activated successfully.
-echo Launching server with Waitress...
 echo.
-echo  - Local access: http://localhost:5000
-echo  - Network access: http://[Your-IP-Address]:5000
+echo Loading environment variables from .env file...
+
+REM Load environment variables from .env file
+for /f "tokens=1,* delims==" %%a in ('findstr /R /V "^#" .env') do (
+    set "%%a=%%b"
+)
+REM Set default port if not defined in .env
+if not defined APP_PORT (
+    set "APP_PORT=25564"
+)
+
+echo Launching server with Waitress on port %APP_PORT%...
+echo.
+echo  - Local access: http://localhost:%APP_PORT%
+echo  - Network access is available on your local network.
 echo.
 echo Server is running. Do not close this window.
 echo Press Ctrl+C to stop the server.
 echo.
 
-waitress-serve --host=0.0.0.0 --port=5000 app:app
+waitress-serve --host=0.0.0.0 --port=%APP_PORT% app:app
 
 echo.
 echo Server has been stopped. Press any key to exit...

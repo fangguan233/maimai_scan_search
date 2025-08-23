@@ -16,8 +16,10 @@ from flask import Flask, request, jsonify, render_template, send_from_directory,
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
-# --- **ICP备案支持**: 加载环境变量 ---
+# --- **API封装改造**: 加载环境变量 ---
 load_dotenv()
+# --- **API封装改造**: 从环境变量中获取API密钥 ---
+API_KEY = os.getenv('API_KEY')
 
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
@@ -232,6 +234,170 @@ def get_most_centered_box(boxes, img_shape):
             
     return most_centered
 
+# --- **API封装改造**: 核心识别逻辑函数 ---
+def recognize_song_from_image(filepath):
+    """
+    接收一个图片文件路径，执行完整的YOLO+OCR+匹配流程，并返回结果。
+    这个函数是整个识别功能的核心。
+    """
+    unique_id = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    project_name = f"runs/detect/{unique_id}"
+    save_dir = None
+    
+    try:
+        # 1. 第一次YOLO预测
+        print(f"[{unique_id}] Running 1st YOLO prediction...")
+        yolo_results = yolo_model.predict(source=filepath, save_crop=True, project=project_name, name="predict_pass_1", device='cpu')
+        save_dir = yolo_results[0].save_dir
+        
+        if not yolo_results[0].boxes:
+            return {"error": "YOLO did not detect any objects in the first pass."}, 500
+        
+        boxes = yolo_results[0].boxes
+        img_shape = yolo_results[0].orig_shape
+        
+        all_boxes = {int(b.cls): [] for b in boxes}
+        for b in boxes:
+            all_boxes[int(b.cls)].append(b)
+
+        name_boxes = all_boxes.get(0, [])
+        name1_boxes = all_boxes.get(1, [])
+        frame1_boxes = all_boxes.get(2, [])
+        name2_boxes = all_boxes.get(3, [])
+        frame2_boxes = all_boxes.get(4, [])
+
+        # 2. 第一次筛选逻辑
+        target_box = None
+
+        if name_boxes:
+            target_box = get_most_centered_box(name_boxes, img_shape)
+        elif frame1_boxes:
+            name1_in_frame1 = [n1 for n1 in name1_boxes for f1 in frame1_boxes if is_inside(n1, f1)]
+            if name1_in_frame1:
+                target_box = get_most_centered_box(name1_in_frame1, img_shape)
+        elif frame2_boxes:
+            name2_in_frame2 = [n2 for n2 in name2_boxes for f2 in frame2_boxes if is_inside(n2, f2)]
+            if name2_in_frame2:
+                target_box = get_most_centered_box(name2_in_frame2, img_shape)
+        
+        # 3. **二次预测逻辑**
+        if not target_box and (frame1_boxes or frame2_boxes):
+            print(f"[{unique_id}] No direct name found. Initiating 2nd pass (Re-scan)...")
+            
+            frame_to_rescan_boxes = frame1_boxes if frame1_boxes else frame2_boxes
+            frame_label = "frame1" if frame1_boxes else "frame2"
+            most_centered_frame = get_most_centered_box(frame_to_rescan_boxes, img_shape)
+            
+            if most_centered_frame:
+                crop_dir_frame = os.path.join(save_dir, 'crops', frame_label)
+                if os.path.exists(crop_dir_frame) and os.listdir(crop_dir_frame):
+                    frame_crop_path = os.path.join(crop_dir_frame, os.listdir(crop_dir_frame)[0])
+                    print(f"[{unique_id}] Re-scanning crop: {frame_crop_path}")
+                    yolo_results_2 = yolo_model.predict(source=frame_crop_path, save_crop=True, project=project_name, name="predict_pass_2", device='cpu')
+                    
+                    if yolo_results_2[0].boxes:
+                        boxes_2 = yolo_results_2[0].boxes
+                        img_shape_2 = yolo_results_2[0].orig_shape
+                        all_boxes_2 = {int(b.cls): [] for b in boxes_2}
+                        for b in boxes_2:
+                            all_boxes_2[int(b.cls)].append(b)
+                        
+                        potential_targets_2 = all_boxes_2.get(0, []) + all_boxes_2.get(1, []) + all_boxes_2.get(3, [])
+                        
+                        if potential_targets_2:
+                            print(f"[{unique_id}] Success! Found name in 2nd pass.")
+                            target_box = get_most_centered_box(potential_targets_2, img_shape_2)
+                            save_dir = yolo_results_2[0].save_dir
+                        else:
+                             print(f"[{unique_id}] 2nd pass failed to find any name.")
+                else:
+                    print(f"[{unique_id}] Could not find crop for '{frame_label}' to re-scan.")
+
+        # 4. 如果二次预测后仍然没有目标，则执行最终降级策略
+        if not target_box:
+            print(f"[{unique_id}] 2nd pass failed or was not triggered. Applying final fallbacks.")
+            final_fallback_targets = name_boxes + name1_boxes + name2_boxes
+            if final_fallback_targets:
+                target_box = get_most_centered_box(final_fallback_targets, img_shape)
+
+        # 5. 如果最终还是没有找到，则报错
+        if not target_box:
+            return {"error": "未能识别到歌曲名，请尝试调整拍摄角度，确保画面清晰、无反光。"}, 500
+        # 6. 处理最终的目标裁剪图
+        target_label = yolo_model.names[int(target_box.cls)]
+        print(f"[{unique_id}] Final target selected: a '{target_label}' box.")
+        crop_dir = os.path.join(save_dir, 'crops', target_label)
+        
+        if not os.path.exists(crop_dir) or not os.listdir(crop_dir):
+            return {"error": f"YOLO did not generate any crops for the final target '{target_label}'."}, 500
+        
+        crop_image_name = os.listdir(crop_dir)[0]
+        crop_image_path = os.path.join(crop_dir, crop_image_name)
+
+        # 7. OCR识别
+        print(f"[{unique_id}] Processing final crop: {crop_image_path}")
+        ocr_text = ""
+        try:
+            ocr_result = ocr_instance.predict(crop_image_path)
+            if ocr_result and ocr_result[0] is not None:
+                texts = ocr_result[0].get('rec_texts', [])
+                filtered_texts = [text for text in texts if '等级' not in text]
+                ocr_text = "".join(filtered_texts)
+                print(f"[{unique_id}] OCR Result: {ocr_text}")
+        except BaseException:
+            print(f"--- [{unique_id}] OCR FAILED WITH UNKNOWN EXCEPTION ---")
+            traceback.print_exc()
+            ocr_text = ""
+
+        if not ocr_text:
+            return {"error": "OCR did not recognize any text from the best crop."}, 404
+
+        # 8. 匹配并返回结果
+        songs_json_path = os.path.join(app.root_path, 'songs.json')
+        with open(songs_json_path, 'r', encoding='utf-8') as f:
+            songs_data = json.load(f)
+        
+        best_match_song = find_best_match(ocr_text, songs_data)
+
+        if best_match_song:
+            return best_match_song, 200
+        else:
+            return {"error": "未能识别到歌曲名，请尝试调整拍摄角度，确保画面清晰、无反光。"}, 404
+
+    except BaseException as e:
+        error_message = f"An unexpected error occurred: {str(e)}"
+        print(f"--- [{unique_id}] FATAL ERROR ---")
+        traceback.print_exc()
+        return {'error': 'An unexpected error occurred', 'details': error_message}, 500
+    finally:
+        # **监控模式改造与健壮性修复**
+        monitoring_flag_path = os.path.join(app.root_path, 'monitoring.flag')
+        flag_exists = os.path.exists(monitoring_flag_path)
+        
+        if not flag_exists:
+            print(f"[{unique_id}] Cleaning up temporary files...")
+            if save_dir and os.path.exists(save_dir):
+                try:
+                    shutil.rmtree(save_dir)
+                except Exception as e:
+                    print(f"[{unique_id}] Error deleting prediction folder: {e}")
+            # Note: The original uploaded file is cleaned up by the caller
+        else:
+            print(f"[{unique_id}] Monitoring mode is ON. Temporary files are preserved.")
+
+# --- **API封装改造**: API密钥认证装饰器 ---
+def api_key_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'X-API-Key' not in request.headers:
+            return jsonify({"error": "API key is missing"}), 401
+        
+        provided_key = request.headers['X-API-Key']
+        if provided_key != API_KEY:
+            return jsonify({"error": "Invalid API key"}), 403
+            
+        return f(*args, **kwargs)
+    return decorated_function
 # --- 主路由 ---
 @app.route('/favicon.ico')
 def favicon():
@@ -761,6 +927,34 @@ def get_aliases(song_id):
         traceback.print_exc()
         return jsonify({"error": "服务器内部错误"}), 500
 
+# --- **API封装改造**: 新的受保护的API端点 ---
+@app.route('/api/recognize', methods=['POST'])
+@api_key_required
+def api_recognize():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    # 1. 保存临时文件
+    unique_id = f"api-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    filename = f"{unique_id}.jpg"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
+    try:
+        # 2. 调用核心处理函数
+        result, status_code = recognize_song_from_image(filepath)
+        return jsonify(result), status_code
+    finally:
+        # 3. 清理临时文件
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                print(f"Error deleting API temp file '{filepath}': {e}")
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -770,185 +964,34 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
     
-    unique_id = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    # 1. 保存临时文件
+    unique_id = f"web-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     filename = f"{unique_id}.jpg"
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    project_name = f"runs/detect/{unique_id}"
-    save_dir = None
-    
     try:
-        # 1. 第一次YOLO预测
-        print(f"[{unique_id}] Running 1st YOLO prediction...")
-        yolo_results = yolo_model.predict(source=filepath, save_crop=True, project=project_name, name="predict_pass_1", device='cpu')
-        save_dir = yolo_results[0].save_dir
+        # 2. 调用核心处理函数
+        result, status_code = recognize_song_from_image(filepath)
+# 3. **兼容性修复**: 如果是网页端上传，对于OCR识别失败的情况，返回一个特定的JSON，
+        #    而不是像API那样返回404，这样可以触发前端的重试逻辑。
+        if status_code == 404 and result.get("error") == "OCR did not recognize any text from the best crop.":
+            return jsonify({"error": "OCR did not recognize any text from the best crop."}) # 注意: 这里没有状态码，让Flask默认为200
         
-        if not yolo_results[0].boxes:
-            return jsonify({"error": "YOLO did not detect any objects in the first pass."}), 500
-        
-        boxes = yolo_results[0].boxes
-        img_shape = yolo_results[0].orig_shape
-        
-        all_boxes = {int(b.cls): [] for b in boxes}
-        for b in boxes:
-            all_boxes[int(b.cls)].append(b)
+        # **兼容性修复**: 对于 "未能识别到歌曲名" 的情况，也同样处理
+        if status_code == 404 and result.get("error") == "未能识别到歌曲名，请尝试调整拍摄角度，确保画面清晰、无反光。":
+             return jsonify({"error": "未能识别到歌曲名，请尝试调整拍摄角度，确保画面清晰、无反光。"})
 
-        name_boxes = all_boxes.get(0, [])
-        name1_boxes = all_boxes.get(1, [])
-        frame1_boxes = all_boxes.get(2, [])
-        name2_boxes = all_boxes.get(3, [])
-        frame2_boxes = all_boxes.get(4, [])
+        # 对于其他所有情况，正常返回结果和状态码
+        return jsonify(result), status_code
 
-        # 2. 第一次筛选逻辑
-        target_box = None
-        
-        if name_boxes:
-            target_box = get_most_centered_box(name_boxes, img_shape)
-        elif frame1_boxes:
-            name1_in_frame1 = [n1 for n1 in name1_boxes for f1 in frame1_boxes if is_inside(n1, f1)]
-            if name1_in_frame1:
-                target_box = get_most_centered_box(name1_in_frame1, img_shape)
-        elif frame2_boxes:
-            name2_in_frame2 = [n2 for n2 in name2_boxes for f2 in frame2_boxes if is_inside(n2, f2)]
-            if name2_in_frame2:
-                target_box = get_most_centered_box(name2_in_frame2, img_shape)
-        
-        # 3. **二次预测逻辑**
-        if not target_box and (frame1_boxes or frame2_boxes):
-            print(f"[{unique_id}] No direct name found. Initiating 2nd pass (Re-scan)...")
-            
-            # 优先选择 frame1
-            frame_to_rescan_boxes = frame1_boxes if frame1_boxes else frame2_boxes
-            frame_label = "frame1" if frame1_boxes else "frame2"
-            
-            most_centered_frame = get_most_centered_box(frame_to_rescan_boxes, img_shape)
-            
-            if most_centered_frame:
-                crop_dir_frame = os.path.join(save_dir, 'crops', frame_label)
-                if os.path.exists(crop_dir_frame) and os.listdir(crop_dir_frame):
-                    # 假设第一个裁剪图对应最居中的框
-                    frame_crop_path = os.path.join(crop_dir_frame, os.listdir(crop_dir_frame)[0])
-                    
-                    print(f"[{unique_id}] Re-scanning crop: {frame_crop_path}")
-                    
-                    # 在frame的裁剪图上进行第二次预测
-                    yolo_results_2 = yolo_model.predict(source=frame_crop_path, save_crop=True, project=project_name, name="predict_pass_2", device='cpu')
-                    
-                    if yolo_results_2[0].boxes:
-                        boxes_2 = yolo_results_2[0].boxes
-                        img_shape_2 = yolo_results_2[0].orig_shape
-                        
-                        all_boxes_2 = {int(b.cls): [] for b in boxes_2}
-                        for b in boxes_2:
-                            all_boxes_2[int(b.cls)].append(b)
-                        
-                        # 在第二次结果中寻找任何name
-                        name_boxes_2 = all_boxes_2.get(0, [])
-                        name1_boxes_2 = all_boxes_2.get(1, [])
-                        name2_boxes_2 = all_boxes_2.get(3, [])
-                        
-                        potential_targets_2 = name_boxes_2 + name1_boxes_2 + name2_boxes_2
-                        
-                        if potential_targets_2:
-                            print(f"[{unique_id}] Success! Found name in 2nd pass.")
-                            target_box = get_most_centered_box(potential_targets_2, img_shape_2)
-                            # 更新 save_dir 和 crop_dir 到第二次预测的结果
-                            save_dir = yolo_results_2[0].save_dir
-                        else:
-                             print(f"[{unique_id}] 2nd pass failed to find any name.")
-                else:
-                    print(f"[{unique_id}] Could not find crop for '{frame_label}' to re-scan.")
-
-        # 4. 如果二次预测后仍然没有目标，则执行最终降级策略
-        if not target_box:
-            print(f"[{unique_id}] 2nd pass failed or was not triggered. Applying final fallbacks.")
-            final_fallback_targets = name_boxes + name1_boxes + name2_boxes
-            if final_fallback_targets:
-                target_box = get_most_centered_box(final_fallback_targets, img_shape)
-
-        # 5. 如果最终还是没有找到，则报错
-        if not target_box:
-            return jsonify({"error": "未能识别到歌曲名，请尝试调整拍摄角度，确保画面清晰、无反光。"}), 500
-
-        # 6. 处理最终的目标裁剪图
-        target_label = yolo_model.names[int(target_box.cls)]
-        print(f"[{unique_id}] Final target selected: a '{target_label}' box.")
-        crop_dir = os.path.join(save_dir, 'crops', target_label)
-        
-        if not os.path.exists(crop_dir) or not os.listdir(crop_dir):
-            return jsonify({"error": f"YOLO did not generate any crops for the final target '{target_label}'."}), 500
-        
-        crop_image_name = os.listdir(crop_dir)[0]
-        crop_image_path = os.path.join(crop_dir, crop_image_name)
-
-        # 7. OCR识别
-        print(f"[{unique_id}] Processing final crop: {crop_image_path}")
-        ocr_text = ""
-        try:
-            ocr_result = ocr_instance.predict(crop_image_path)
-            if ocr_result and ocr_result[0] is not None:
-                texts = ocr_result[0].get('rec_texts', [])
-                filtered_texts = [text for text in texts if '等级' not in text]
-                ocr_text = "".join(filtered_texts)
-                print(f"[{unique_id}] OCR Result: {ocr_text}")
-        except BaseException:
-            print(f"--- [{unique_id}] OCR FAILED WITH UNKNOWN EXCEPTION ---")
-            traceback.print_exc()
-            ocr_text = ""
-
-        if not ocr_text:
-            # **最终修复**: 将OCR失败从500错误改为正常的业务失败，以便客户端重试
-            print(f"[{unique_id}] OCR failed to produce text. Returning a soft error to trigger client retry.")
-            return jsonify({"error": "OCR did not recognize any text from the best crop."})
-
-        # 8. 匹配并返回结果
-        # **终极路径修复**: 改为相对路径
-        songs_json_path = os.path.join(app.root_path, 'songs.json')
-        with open(songs_json_path, 'r', encoding='utf-8') as f:
-            songs_data = json.load(f)
-        
-        best_match_song = find_best_match(ocr_text, songs_data)
-
-        if best_match_song:
-            return jsonify(best_match_song)
-        else:
-            # **最终修复**: 根据指示，将“匹配失败”的错误统一为指导性提示
-            print(f"[{unique_id}] OCR text '{ocr_text}' found, but no match in database. Prompting user to retry.")
-            return jsonify({"error": "未能识别到歌曲名，请尝试调整拍摄角度，确保画面清晰、无反光。"})
-
-    except BaseException as e:
-        error_message = f"An unexpected error occurred: {str(e)}"
-        print(f"--- [{unique_id}] FATAL ERROR ---")
-        traceback.print_exc()
-        return jsonify({'error': 'An unexpected error occurred', 'details': error_message}), 500
     finally:
-        # **监控模式改造与健壮性修复**
-        monitoring_flag_path = os.path.join(app.root_path, 'monitoring.flag')
-        flag_exists = os.path.exists(monitoring_flag_path)
-        
-        # 增加明确的诊断日志
-        print(f"[{unique_id}] Final cleanup check. Monitoring flag at '{monitoring_flag_path}' exists: {flag_exists}.")
-
-        if not flag_exists:
-            print(f"[{unique_id}] Cleaning up temporary files...")
-            # 删除 YOLO 预测生成的文件夹
-            if save_dir and os.path.exists(save_dir):
-                try:
-                    shutil.rmtree(save_dir)
-                    print(f"[{unique_id}] Successfully deleted prediction folder: {save_dir}")
-                except Exception as e:
-                    print(f"[{unique_id}] Error deleting prediction folder: {e}")
-            
-            # 删除上传的原始文件
-            if os.path.exists(filepath):
-                try:
-                    os.remove(filepath)
-                    print(f"[{unique_id}] Successfully deleted upload file: {filepath}")
-                except Exception as e:
-                    print(f"[{unique_id}] Error deleting upload file: {e}")
-        else:
-            print(f"[{unique_id}] Monitoring mode is ON. Temporary files are preserved.")
+        # 4. 清理临时文件
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                print(f"Error deleting web upload temp file '{filepath}': {e}")
 
 # --- **留言板改造**: 新增反馈接口 ---
 @app.route('/api/feedback', methods=['POST'])
