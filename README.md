@@ -147,7 +147,7 @@ import os
 
 # --- 配置 ---
 API_URL = "http://www.maiscan.top/api/recognize"
-API_KEY = "c74cd5ccad0784a2077e444715881a2c3d77d528fd1a7049635552096370eb67" # 替换为你的密钥
+API_KEY = "c74cd5ccad0784a2077e444715881a2c3d77d528fd1a7049635552096370eb67" 
 IMAGE_PATH = "C:\\myself_prodect\\test.jpg" # 替换为你的图片路径
 
 # --- 检查文件是否存在 ---
@@ -185,4 +185,5 @@ else:
     except requests.exceptions.RequestException as e:
 
         print(f"请求时发生网络错误: {e}")
+
 
