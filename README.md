@@ -56,7 +56,88 @@ conda activate newyolo
 
 ## API 使用
 
-您可以通过向 `/api/recognize` 端点发送 POST 请求来使用识别功能。
+### 接口: `/api/recognize`
+
+#### 1. 请求
+
+-   **方法**: `POST`
+-   **URL**: `http://www.maiscan.top/api/recognize`
+-   **头部 (Headers)**:
+    -   `X-API-Key`: `c74cd5ccad0784a2077e444715881a2c3d77d528fd1a7049635552096370eb67` - 
+-   **正文 (Body)**: `multipart/form-data`
+    -   `file`: `C:\\myself_prodect\\test.jpg` - 
+
+#### 2. 响应
+
+##### 成功 (200 OK)
+
+如果识别成功，服务器将返回一个包含所有匹配版本的歌曲信息的 JSON 数组。
+
+**示例:**
+```json
+[
+    {
+        "basic_info": {
+            "artist": "Mameyudoufu",
+            "bpm": 143,
+            "from": "maimai でらっくす BUDDiES",
+            "genre": "其他游戏",
+            "is_new": false,
+            "release_date": "",
+            "title": "Sunday Night feat Kanata.N"
+        },
+        "charts": [
+            {
+                "charter": "-",
+                "notes": [ 102, 12, 4, 26, 8 ]
+            },
+            {
+                "charter": "-",
+                "notes": [ 207, 14, 17, 25, 7 ]
+            },
+            {
+                "charter": "みそかつ侍",
+                "notes": [ 260, 112, 28, 22, 27 ]
+            },
+            {
+                "charter": "ものくろっく",
+                "notes": [ 431, 59, 57, 30, 33 ]
+            }
+        ],
+        "cids": [ 8125, 8126, 8127, 8128 ],
+        "cover_url": "/cover/11585",
+        "ds": [ 3.0, 6.5, 10.8, 13.5 ],
+        "id": "11585",
+        "level": [ "3", "6", "10+", "13" ],
+        "title": "Sunday Night feat Kanata.N",
+        "type": "DX"
+    }
+]
+```
+
+##### 失败
+
+-   **400 Bad Request**: 请求格式错误（例如，没有上传文件）。
+    ```json
+    { "error": "No file part" }
+    ```
+-   **401 Unauthorized**: API 密钥缺失。
+    ```json
+    { "error": "API key is missing" }
+    ```
+-   **403 Forbidden**: API 密钥无效或不匹配。
+    ```json
+    { "error": "Invalid API key" }
+    ```
+-   **404 Not Found**: 服务器成功处理了图片，但无法在数据库中找到匹配的歌曲。
+    ```json
+    { "error": "未能识别到歌曲名，请尝试调整拍摄角度，确保画面清晰、无反光。" }
+    ```
+-   **500 Internal Server Error**: 服务器在处理过程中发生意外错误（例如，模型加载失败，图片处理异常）。
+    ```json
+    { "error": "An unexpected error occurred", "details": "<具体的错误信息>" }
+    ```
+
 
 ### Python 示例
 
@@ -104,3 +185,4 @@ else:
     except requests.exceptions.RequestException as e:
 
         print(f"请求时发生网络错误: {e}")
+
