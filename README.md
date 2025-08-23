@@ -13,6 +13,10 @@
     *   **推分计算**: 提供了易用的推分计算方式。
     *   **B50 查询**: 提供专门的页面展示可交互的 Best 50 成绩列表（包含新旧版本）。
     *   **数据刷新**: 用户可以手动触发，从 Diving-Fish 服务器同步最新的成绩，保持本地缓存数据为最新。
+ 
+![图片1](./image/image1.jpg)
+![图片2](./image/image2.jpg)
+![图片3](./image/image3.jpg)
 
 ## 安装与启动
 
@@ -98,4 +102,5 @@ else:
                 print(response.text)
 
     except requests.exceptions.RequestException as e:
+
         print(f"请求时发生网络错误: {e}")
